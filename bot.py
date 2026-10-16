@@ -41,6 +41,14 @@ def menu_kb(role):
         rows.append([KeyboardButton(text="📥 Импорт"), KeyboardButton(text="👥 Пользователи")])
     return ReplyKeyboardMarkup(keyboard=rows, resize_keyboard=True)
 
+# список кнопок меню — чтобы бот не путал их с текстом для поиска
+MENU_BUTTONS = {
+    "🔍 Поиск", "👤 Сотрудник", "📜 История",
+    "➕ Добавить", "🔄 Переместить", "✏️ Статус",
+    "📤 Excel", "📥 Импорт", "👥 Пользователи",
+}
+NOT_MENU = ~F.text.in_(MENU_BUTTONS)
+
 # ---------- состояния ----------
 class SearchFSM(StatesGroup):
     waiting = State()
@@ -108,7 +116,7 @@ async def btn_search(msg: Message, state: FSMContext):
     await state.set_state(SearchFSM.waiting)
     await msg.answer("🔍 Введите запрос (серийник, ФИО, инв. №, рабочее место, тип, статус...):")
 
-@router.message(SearchFSM.waiting, F.text)
+@router.message(SearchFSM.waiting, F.text, NOT_MENU)
 async def search_query(msg: Message, state: FSMContext):
     await state.clear()
     query = msg.text.strip()
@@ -151,7 +159,7 @@ async def btn_employee(msg: Message, state: FSMContext):
     await state.set_state(EmployeeFSM.waiting)
     await msg.answer("Введите Фамилию или Фамилию И.О.:")
 
-@router.message(EmployeeFSM.waiting, F.text)
+@router.message(EmployeeFSM.waiting, F.text, NOT_MENU)
 async def employee_query(msg: Message, state: FSMContext):
     await state.clear()
     rows = db.search_employees_universal(msg.text.strip())
@@ -175,7 +183,7 @@ async def btn_history(msg: Message, state: FSMContext):
     await state.set_state(HistoryFSM.waiting)
     await msg.answer("Введи серийный номер оборудования:")
 
-@router.message(HistoryFSM.waiting, F.text)
+@router.message(HistoryFSM.waiting, F.text, NOT_MENU)
 async def history_serial(msg: Message, state: FSMContext):
     await state.clear()
     eq = db.find_by_serial(msg.text.strip())
@@ -200,8 +208,16 @@ async def btn_add(msg: Message, state: FSMContext):
         await msg.answer("⛔ Нет доступа."); return
     await state.clear()
     await state.set_state(AddFSM.type_)
-    await msg.answer("Шаг 1/11. Тип оборудования (ПК / монитор / принтер / МФУ / ...):\n"
-                     "Отправь /cancel для отмены.")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="ПК", callback_data="atype:ПК"),
+         InlineKeyboardButton(text="Монитор", callback_data="atype:Монитор")],
+        [InlineKeyboardButton(text="Телефон", callback_data="atype:Телефон"),
+         InlineKeyboardButton(text="МФУ", callback_data="atype:МФУ")],
+    ])
+    await msg.answer("Шаг 1/11. Тип оборудования.\n"
+                     "Выбери кнопкой или введи вручную (можно свой вариант):\n"
+                     "Отправь /cancel для отмены.",
+                     reply_markup=kb)
 
 @router.message(F.text == "🔄 Переместить")
 async def btn_move(msg: Message, state: FSMContext):
@@ -211,7 +227,7 @@ async def btn_move(msg: Message, state: FSMContext):
     await state.set_state(MoveFSM.serial)
     await msg.answer("Введи серийный номер оборудования для перемещения:")
 
-@router.message(MoveFSM.serial, F.text)
+@router.message(MoveFSM.serial, F.text, NOT_MENU)
 async def move_serial(msg: Message, state: FSMContext):
     eq = db.find_by_serial(msg.text.strip())
     if not eq:
@@ -222,7 +238,7 @@ async def move_serial(msg: Message, state: FSMContext):
     await state.set_state(MoveFSM.target)
     await msg.answer(f"Сейчас у: {who}\nВведи ФИО нового сотрудника (или - чтобы снять закрепление):")
 
-@router.message(MoveFSM.target, F.text)
+@router.message(MoveFSM.target, F.text, NOT_MENU)
 async def move_target(msg: Message, state: FSMContext):
     target = msg.text.strip()
     d = await state.get_data()
@@ -248,7 +264,7 @@ async def btn_status(msg: Message, state: FSMContext):
     await state.set_state(StatusFSM.serial)
     await msg.answer("Введи серийный номер оборудования:")
 
-@router.message(StatusFSM.serial, F.text)
+@router.message(StatusFSM.serial, F.text, NOT_MENU)
 async def status_serial(msg: Message, state: FSMContext):
     eq = db.find_by_serial(msg.text.strip())
     if not eq:
@@ -292,17 +308,34 @@ async def btn_users(msg: Message, state: FSMContext):
         InlineKeyboardButton(text="❌ Забрать доступ", callback_data="usr:revoke")]])
     await msg.answer("\n".join(lines), reply_markup=kb)
 
-# ---------- /add (команда) — использует тот же FSM ----------
+# ---------- /add (команда) ----------
 @router.message(Command("add"))
 async def cmd_add(msg: Message, state: FSMContext):
     if not has_role(msg.from_user.id, "editor"):
         await msg.answer("⛔ Нет доступа."); return
     await state.clear()
     await state.set_state(AddFSM.type_)
-    await msg.answer("Шаг 1/11. Тип оборудования (ПК / монитор / принтер / МФУ / ...):\n"
-                     "Отправь /cancel для отмены.")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="ПК", callback_data="atype:ПК"),
+         InlineKeyboardButton(text="Монитор", callback_data="atype:Монитор")],
+        [InlineKeyboardButton(text="Телефон", callback_data="atype:Телефон"),
+         InlineKeyboardButton(text="МФУ", callback_data="atype:МФУ")],
+    ])
+    await msg.answer("Шаг 1/11. Тип оборудования.\n"
+                     "Выбери кнопкой или введи вручную (можно свой вариант):\n"
+                     "Отправь /cancel для отмены.",
+                     reply_markup=kb)
 
-@router.message(AddFSM.type_)
+@router.callback_query(AddFSM.type_, F.data.startswith("atype:"))
+async def add_type_cb(cb: CallbackQuery, state: FSMContext):
+    value = cb.data.split(":", 1)[1]
+    await state.update_data(type_=value)
+    await cb.message.edit_reply_markup(reply_markup=None)
+    await state.set_state(AddFSM.model)
+    await cb.message.answer(f"Тип: {value}\nШаг 2/11. Модель (или -):")
+    await cb.answer()
+
+@router.message(AddFSM.type_, F.text)
 async def add_type(msg: Message, state: FSMContext):
     await state.update_data(type_=msg.text.strip())
     await state.set_state(AddFSM.model)
@@ -385,9 +418,27 @@ async def add_dep(msg: Message, state: FSMContext):
 async def add_wp(msg: Message, state: FSMContext):
     await state.update_data(workplace=None if msg.text.strip() == "-" else msg.text.strip())
     await state.set_state(AddFSM.site)
-    await msg.answer("Шаг 9/11. Площадка (или -):")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="СПб", callback_data="asite:СПб"),
+         InlineKeyboardButton(text="Мск Капотня", callback_data="asite:Мск Капотня")],
+        [InlineKeyboardButton(text="Мск МНПЗ", callback_data="asite:Мск МНПЗ"),
+         InlineKeyboardButton(text="Омск ОНПЗ", callback_data="asite:Омск ОНПЗ")],
+        [InlineKeyboardButton(text="Омск Кронштадт", callback_data="asite:Омск Кронштадт")],
+    ])
+    await msg.answer("Шаг 9/11. Площадка.\n"
+                     "Выбери кнопкой или введи вручную (можно свой вариант):",
+                     reply_markup=kb)
 
-@router.message(AddFSM.site)
+@router.callback_query(AddFSM.site, F.data.startswith("asite:"))
+async def add_site_cb(cb: CallbackQuery, state: FSMContext):
+    value = cb.data.split(":", 1)[1]
+    await state.update_data(site=value)
+    await cb.message.edit_reply_markup(reply_markup=None)
+    await state.set_state(AddFSM.issued_at)
+    await cb.message.answer(f"Площадка: {value}\nШаг 10/11. Дата выдачи (ГГГГ-ММ-ДД или -):")
+    await cb.answer()
+
+@router.message(AddFSM.site, F.text)
 async def add_site(msg: Message, state: FSMContext):
     await state.update_data(site=None if msg.text.strip() == "-" else msg.text.strip())
     await state.set_state(AddFSM.issued_at)
@@ -436,7 +487,7 @@ async def add_cancel(cb: CallbackQuery, state: FSMContext):
     await cb.message.edit_text("Отменено.")
     await cb.answer()
 
-# ---------- команды /find /employee /history /move /move2 /status /export /import /grant /revoke ----------
+# ---------- команды поиска и работы ----------
 @router.message(Command("find", "search"))
 async def cmd_find(msg: Message, command: CommandObject):
     if not has_role(msg.from_user.id, "viewer"):
@@ -589,7 +640,7 @@ async def cmd_export(msg: Message, command: CommandObject):
         BufferedInputFile(buf.read(), filename=f"inventory_{date.today()}.xlsx"),
         caption=f"Строк: {len(rows)}")
 
-# ---------- Excel: callback ----------
+# ---------- Excel callbacks ----------
 @router.callback_query(F.data == "exp:all")
 async def cb_exp_all(cb: CallbackQuery):
     if not has_role(cb.from_user.id, "editor"):
@@ -629,7 +680,7 @@ async def cb_expf(cb: CallbackQuery, state: FSMContext):
     await cb.message.edit_text(f"Введи {prompts.get(field, field)}:")
     await cb.answer()
 
-@router.message(ExportFSM.waiting_value, F.text)
+@router.message(ExportFSM.waiting_value, F.text, NOT_MENU)
 async def exp_value(msg: Message, state: FSMContext):
     d = await state.get_data()
     field = d.get("export_field")
@@ -727,7 +778,7 @@ async def cmd_revoke(msg: Message, command: CommandObject):
     db.delete_user(tg_id)
     await msg.answer(f"✅ {tg_id} удалён.")
 
-# ---------- Users callback ----------
+# ---------- Users callbacks ----------
 @router.callback_query(F.data == "usr:grant")
 async def cb_usr_grant(cb: CallbackQuery, state: FSMContext):
     if not has_role(cb.from_user.id, "admin"):
@@ -745,7 +796,7 @@ async def cb_usr_revoke(cb: CallbackQuery, state: FSMContext):
     await cb.message.answer("Отправь telegram_id для удаления:")
     await cb.answer()
 
-@router.message(UsersFSM.waiting_grant, F.text)
+@router.message(UsersFSM.waiting_grant, F.text, NOT_MENU)
 async def usr_grant_value(msg: Message, state: FSMContext):
     parts = msg.text.strip().split()
     if len(parts) != 2 or parts[1] not in ROLES:
@@ -758,7 +809,7 @@ async def usr_grant_value(msg: Message, state: FSMContext):
     await state.clear()
     await msg.answer(f"✅ {tg_id} → {parts[1]}")
 
-@router.message(UsersFSM.waiting_revoke, F.text)
+@router.message(UsersFSM.waiting_revoke, F.text, NOT_MENU)
 async def usr_revoke_value(msg: Message, state: FSMContext):
     try:
         tg_id = int(msg.text.strip())
