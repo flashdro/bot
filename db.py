@@ -14,6 +14,7 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS employees (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
     full_name   TEXT NOT NULL,
+    email       TEXT,
     department  TEXT,
     workplace   TEXT,
     site        TEXT,
@@ -23,13 +24,18 @@ CREATE TABLE IF NOT EXISTS employees (
 CREATE TABLE IF NOT EXISTS equipment (
     id                  INTEGER PRIMARY KEY AUTOINCREMENT,
     type                TEXT NOT NULL,
+    manufacturer        TEXT,
     model               TEXT,
     serial              TEXT UNIQUE,
     inventory_no        TEXT UNIQUE,
-    status              TEXT NOT NULL DEFAULT 'в работе',
+    organization        TEXT,
+    mol                 TEXT,
+    status              TEXT NOT NULL DEFAULT 'В эксплуатации',
     current_employee_id INTEGER,
     issued_at           TEXT,
     note                TEXT,
+    verified_at         TEXT,
+    verified_by         INTEGER,
     created_at          TEXT DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (current_employee_id) REFERENCES employees(id)
 );
@@ -71,12 +77,12 @@ def init_db():
         c.executescript(SCHEMA)
 
 # ---------- users ----------
-def get_user_role(tg_id: int):
+def get_user_role(tg_id):
     with get_conn() as c:
         row = c.execute("SELECT role FROM users WHERE telegram_id=?", (tg_id,)).fetchone()
         return row["role"] if row else None
 
-def upsert_user(tg_id: int, full_name, role: str, added_by=None):
+def upsert_user(tg_id, full_name, role, added_by=None):
     with get_conn() as c:
         c.execute("""INSERT INTO users(telegram_id, full_name, role, added_by)
                      VALUES(?,?,?,?)
@@ -89,31 +95,31 @@ def list_users():
     with get_conn() as c:
         return c.execute("SELECT * FROM users ORDER BY added_at").fetchall()
 
-def delete_user(tg_id: int):
+def delete_user(tg_id):
     with get_conn() as c:
         c.execute("DELETE FROM users WHERE telegram_id=?", (tg_id,))
 
 # ---------- employees ----------
-def find_employee_exact(full_name: str):
+def find_employee_exact(full_name):
     with get_conn() as c:
         return c.execute("SELECT * FROM employees WHERE lower(full_name)=lower(?)",
                          (full_name.strip(),)).fetchone()
 
-def search_employees_universal(query: str, limit: int = 10):
+def search_employees_universal(query, limit=10):
     q = f"%{query.strip()}%"
     with get_conn() as c:
         return c.execute("""
             SELECT * FROM employees
             WHERE full_name LIKE ? OR department LIKE ?
-               OR workplace LIKE ? OR site LIKE ?
+               OR workplace LIKE ? OR site LIKE ? OR email LIKE ?
             ORDER BY full_name LIMIT ?
-        """, (q, q, q, q, limit)).fetchall()
+        """, (q, q, q, q, q, limit)).fetchall()
 
-def create_employee(full_name, department, workplace, site):
+def create_employee(full_name, department, workplace, site, email=None):
     with get_conn() as c:
-        cur = c.execute("""INSERT INTO employees(full_name, department, workplace, site)
-                           VALUES(?,?,?,?)""",
-                        (full_name, department, workplace, site))
+        cur = c.execute("""INSERT INTO employees(full_name, department, workplace, site, email)
+                           VALUES(?,?,?,?,?)""",
+                        (full_name, department, workplace, site, email))
         return cur.lastrowid
 
 def get_employee(emp_id):
@@ -122,21 +128,42 @@ def get_employee(emp_id):
     with get_conn() as c:
         return c.execute("SELECT * FROM employees WHERE id=?", (emp_id,)).fetchone()
 
+def update_employee(emp_id, **fields):
+    allowed = {"full_name", "email", "department", "workplace", "site"}
+    sets = [f"{k}=?" for k in fields if k in allowed]
+    vals = [fields[k] for k in fields if k in allowed]
+    if not sets:
+        return
+    vals.append(emp_id)
+    with get_conn() as c:
+        c.execute(f"UPDATE employees SET {', '.join(sets)} WHERE id=?", vals)
+
 # ---------- equipment ----------
-def find_by_serial(serial: str):
+def find_by_serial(serial):
+    if not serial:
+        return None
     with get_conn() as c:
         return c.execute("SELECT * FROM equipment WHERE serial=?", (serial,)).fetchone()
 
-def find_by_inventory(inv: str):
+def find_by_inventory(inv):
+    if not inv:
+        return None
     with get_conn() as c:
         return c.execute("SELECT * FROM equipment WHERE inventory_no=?", (inv,)).fetchone()
 
-def create_equipment(type_, model, serial, inv, status, employee_id, issued_at, note, changed_by):
+def get_equipment(eq_id):
+    with get_conn() as c:
+        return c.execute("SELECT * FROM equipment WHERE id=?", (eq_id,)).fetchone()
+
+def create_equipment(type_, manufacturer, model, serial, inv, organization, mol,
+                     status, employee_id, issued_at, note, changed_by):
     with get_conn() as c:
         cur = c.execute("""INSERT INTO equipment
-            (type, model, serial, inventory_no, status, current_employee_id, issued_at, note)
-            VALUES(?,?,?,?,?,?,?,?)""",
-            (type_, model, serial, inv, status, employee_id, issued_at, note))
+            (type, manufacturer, model, serial, inventory_no, organization, mol,
+             status, current_employee_id, issued_at, note)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+            (type_, manufacturer, model, serial, inv, organization, mol,
+             status, employee_id, issued_at, note))
         eq_id = cur.lastrowid
         c.execute("""INSERT INTO history(equipment_id, action, to_employee_id, new_value, changed_by)
                      VALUES(?, 'create', ?, ?, ?)""",
@@ -158,6 +185,50 @@ def change_status(eq_id, old_status, new_status, changed_by):
                      VALUES(?, 'status_change', ?, ?, ?)""",
                   (eq_id, old_status, new_status, changed_by))
 
+def mark_verified(eq_id, changed_by, verified=True):
+    from datetime import datetime
+    if verified:
+        with get_conn() as c:
+            c.execute("UPDATE equipment SET verified_at=?, verified_by=? WHERE id=?",
+                      (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), changed_by, eq_id))
+            c.execute("""INSERT INTO history(equipment_id, action, new_value, changed_by)
+                         VALUES(?, 'verified', 'отмечено проверенным', ?)""",
+                      (eq_id, changed_by))
+    else:
+        with get_conn() as c:
+            c.execute("UPDATE equipment SET verified_at=NULL, verified_by=NULL WHERE id=?",
+                      (eq_id,))
+            c.execute("""INSERT INTO history(equipment_id, action, new_value, changed_by)
+                         VALUES(?, 'unverified', 'снята отметка проверки', ?)""",
+                      (eq_id, changed_by))
+
+def edit_equipment_field(eq_id, field, new_value, changed_by):
+    allowed = {"type", "manufacturer", "model", "serial", "inventory_no",
+               "organization", "mol", "status", "issued_at", "note"}
+    if field not in allowed:
+        return False, "Это поле нельзя редактировать"
+    eq = get_equipment(eq_id)
+    if not eq:
+        return False, "Запись не найдена"
+    old_value = eq[field]
+    if field == "serial" and new_value:
+        other = find_by_serial(new_value)
+        if other and other["id"] != eq_id:
+            return False, f"Серийник {new_value} уже занят (запись ID {other['id']})"
+    if field == "inventory_no" and new_value:
+        other = find_by_inventory(new_value)
+        if other and other["id"] != eq_id:
+            return False, f"Инв. {new_value} уже занят (запись ID {other['id']})"
+    with get_conn() as c:
+        c.execute(f"UPDATE equipment SET {field}=? WHERE id=?", (new_value, eq_id))
+        c.execute("""INSERT INTO history(equipment_id, action, old_value, new_value, changed_by)
+                     VALUES(?, ?, ?, ?, ?)""",
+                  (eq_id, f"edit:{field}",
+                   str(old_value) if old_value is not None else None,
+                   str(new_value) if new_value is not None else None,
+                   changed_by))
+    return True, None
+
 def get_history(eq_id):
     with get_conn() as c:
         return c.execute("""SELECT h.*,
@@ -172,25 +243,28 @@ def get_employee_equipment(emp_id):
                             WHERE current_employee_id=? ORDER BY type, model""",
                          (emp_id,)).fetchall()
 
-def universal_search(query: str, limit: int = 20):
+def universal_search(query, limit=20):
     q = f"%{query.strip()}%"
     sql = """
-        SELECT e.*, emp.full_name, emp.department, emp.workplace, emp.site
+        SELECT e.*, emp.full_name, emp.department, emp.workplace, emp.site, emp.email
         FROM equipment e
         LEFT JOIN employees emp ON emp.id = e.current_employee_id
-        WHERE e.type LIKE ? OR e.model LIKE ? OR e.serial LIKE ?
-           OR e.inventory_no LIKE ? OR e.status LIKE ? OR e.note LIKE ?
-           OR e.issued_at LIKE ? OR emp.full_name LIKE ? OR emp.department LIKE ?
-           OR emp.workplace LIKE ? OR emp.site LIKE ?
+        WHERE e.type LIKE ? OR e.manufacturer LIKE ? OR e.model LIKE ?
+           OR e.serial LIKE ? OR e.inventory_no LIKE ? OR e.organization LIKE ?
+           OR e.mol LIKE ? OR e.status LIKE ? OR e.note LIKE ?
+           OR e.issued_at LIKE ? OR emp.full_name LIKE ? OR emp.email LIKE ?
+           OR emp.department LIKE ? OR emp.workplace LIKE ? OR emp.site LIKE ?
         ORDER BY emp.full_name, e.type LIMIT ?
     """
     with get_conn() as c:
-        return c.execute(sql, [q] * 11 + [limit]).fetchall()
+        return c.execute(sql, [q]*15 + [limit]).fetchall()
 
-def export_query(employee_like=None, workplace=None, site=None, type_=None, status=None):
-    sql = """SELECT e.type, e.model, e.serial, e.inventory_no, e.status,
-                    emp.full_name, emp.department, emp.workplace, emp.site,
-                    e.issued_at, e.note
+def export_query(employee_like=None, workplace=None, site=None, type_=None,
+                 status=None, verified=None):
+    sql = """SELECT e.type, e.manufacturer, e.model, e.serial, e.inventory_no,
+                    e.organization, e.mol, e.status,
+                    emp.full_name, emp.email, emp.department, emp.workplace, emp.site,
+                    e.issued_at, e.note, e.verified_at, e.verified_by
              FROM equipment e
              LEFT JOIN employees emp ON emp.id = e.current_employee_id
              WHERE 1=1"""
@@ -200,6 +274,14 @@ def export_query(employee_like=None, workplace=None, site=None, type_=None, stat
     if site:          sql += " AND emp.site = ?";         params.append(site)
     if type_:         sql += " AND e.type = ?";           params.append(type_)
     if status:        sql += " AND e.status = ?";         params.append(status)
+    if verified is True:  sql += " AND e.verified_at IS NOT NULL"
+    if verified is False: sql += " AND e.verified_at IS NULL"
     sql += " ORDER BY emp.full_name, e.type"
     with get_conn() as c:
         return c.execute(sql, params).fetchall()
+
+def count_verified():
+    with get_conn() as c:
+        total = c.execute("SELECT COUNT(*) FROM equipment").fetchone()[0]
+        done = c.execute("SELECT COUNT(*) FROM equipment WHERE verified_at IS NOT NULL").fetchone()[0]
+        return done, total
