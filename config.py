@@ -1,8 +1,8 @@
 import os
 
 # ==== ЗАПОЛНИ ЭТИ ДВЕ СТРОКИ СВОИМИ ЗНАЧЕНИЯМИ ====
-BOT_TOKEN = "СЮДА_ТОКЕН_ОТ_BOTFATHER"
-SUPER_ADMIN_IDS = {СЮДА_ТВОЙ_TELEGRAM_ID}
+BOT_TOKEN = "8786921473:AAHtMAAKH2DjjmB25vjZIJKIIOBdd7crYK0"
+SUPER_ADMIN_IDS = {151584273}
 # ===================================================
 
 DB_PATH = "inventory.db"
