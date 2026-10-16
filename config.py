@@ -1,20 +1,14 @@
 import os
 
-# ==== ЗАПОЛНИ ЭТИ ДВЕ СТРОКИ СВОИМИ ЗНАЧЕНИЯМИ ====
 BOT_TOKEN = "8786921473:AAHtMAAKH2DjjmB25vjZIJKIIOBdd7crYK0"
 SUPER_ADMIN_IDS = {151584273}
-# ===================================================
 
 DB_PATH = "inventory.db"
 
 STATUSES = ["В эксплуатации", "Не поступил", "Выбыл", "Утилизирован",
             "на складе", "в ремонте", "списано", "утеряно"]
 
-ROLES = {
-    "viewer": 1,
-    "editor": 2,
-    "admin":  3,
-}
+ROLES = {"viewer": 1, "editor": 2, "admin": 3}
 
 EDITABLE_FIELDS = {
     "type":          "Тип",
@@ -24,18 +18,24 @@ EDITABLE_FIELDS = {
     "inventory_no":  "Инвентарный №",
     "organization":  "Организация",
     "mol":           "МОЛ / ЛКСИ",
+    "location":      "Место установки",
     "status":        "Статус",
     "issued_at":     "Дата выдачи",
     "note":          "Примечание",
 }
 
-# Типы оборудования (кнопки при добавлении)
 TYPES_MAIN = ["Системный блок", "Ноутбук", "Монитор", "Телефон", "МФУ", "Принтер", "Сканер"]
 TYPES_MORE = ["Плоттер", "Планшет", "Радиостанция", "ИБП", "Коммутатор",
               "Точка доступа", "Тонкий клиент", "Телевизор", "Конференцсвязь"]
 
-# Производители (кнопки при добавлении)
 MANUFACTURERS_MAIN = ["Lenovo", "HP", "Dell", "Samsung", "Acer", "ASUS",
                       "Philips", "Eltex", "DEPO", "Aquarius", "ICL"]
 MANUFACTURERS_MORE = ["Cisco", "Kyocera", "Apple", "Huawei", "Logitech",
                       "Polycom", "Canon", "Epson", "Xerox"]
+
+MOLS_QUICK = ["Дубровский Егор Васильевич"]
+
+ORGANIZATIONS_QUICK = [
+    "Газпромнефть-Энергосервис ООО",
+    "Газпромнефть ИТО ООО",
+]
