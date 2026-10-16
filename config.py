@@ -1,9 +1,11 @@
 import os
 
-BOT_TOKEN = "8786921473:AAHtMAAKH2DjjmB25vjZIJKIIOBdd7crYK0"
-SUPER_ADMIN_IDS = {151584273}
+BOT_TOKEN = "СЮДА_ТОКЕН_ОТ_BOTFATHER"
+SUPER_ADMIN_IDS = {СЮДА_ТВОЙ_TELEGRAM_ID}
 
-DB_PATH = "inventory.db"
+# Turso (облачная БД)
+TURSO_URL = os.getenv("TURSO_URL", "")
+TURSO_TOKEN = os.getenv("TURSO_TOKEN", "")
 
 STATUSES = ["В эксплуатации", "Не поступил", "Выбыл", "Утилизирован",
             "на складе", "в ремонте", "списано", "утеряно"]
