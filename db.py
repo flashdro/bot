@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from config import TURSO_URL, TURSO_TOKEN
-import libsql_client
+from turso_python import TursoClient
 
 SCHEMA_STATEMENTS = [
     """CREATE TABLE IF NOT EXISTS users (
@@ -63,25 +63,21 @@ _client = None
 def _get_client():
     global _client
     if _client is None:
-        _client = libsql_client.create_client_sync(TURSO_URL, auth_token=TURSO_TOKEN)
+        _client = TursoClient(TURSO_URL, auth_token=TURSO_TOKEN)
     return _client
 
 @contextmanager
 def get_conn():
-    """Совместимость с прежним API — возвращает клиент."""
     yield _get_client()
 
 def _exec(sql, params=None):
-    """Выполнить SQL, вернуть ResultSet."""
     client = _get_client()
     if params:
-        return client.execute(sql, list(params))
+        return client.execute(sql, params)
     return client.execute(sql)
 
 def _rows(result):
-    """Преобразовать ResultSet в список словарей."""
-    if not result.rows:
-        return []
+    if not result.rows: return []
     cols = result.columns
     return [dict(zip(cols, row)) for row in result.rows]
 
@@ -95,10 +91,8 @@ def _scalar(result, default=0):
         return v if v is not None else default
     return default
 
-def _like_lower(query: str) -> str:
-    """Для LIKE по кириллице — Turso/SQLite case-insensitive только для ASCII,
-    поэтому делаем сравнение в Python."""
-    return query
+def _lower(s):
+    return s.lower() if isinstance(s, str) else s
 
 def init_db():
     for stmt in SCHEMA_STATEMENTS:
@@ -127,13 +121,8 @@ def delete_user(tg_id):
     _exec("DELETE FROM users WHERE telegram_id=?", [tg_id])
 
 # ---------- employees ----------
-def _lower(s):
-    return s.lower() if isinstance(s, str) else s
-
 def find_employee_exact(full_name):
-    """Поиск сотрудника по точному ФИО, регистронезависимо."""
     target = full_name.strip().lower()
-    # Turso LIKE не работает с кириллицей в регистре — используем Python-фильтр
     rows = _rows(_exec("SELECT * FROM employees"))
     for r in rows:
         if _lower(r["full_name"]).strip() == target:
@@ -155,9 +144,7 @@ def search_employees_universal(query, limit=10):
     return result
 
 def search_employees_full(query, limit=20):
-    """Сотрудники с техникой, чьё ФИО содержит query."""
     q = query.strip().lower()
-    # Получаем всех сотрудников с их счётчиком
     emps = _rows(_exec("SELECT * FROM employees ORDER BY full_name"))
     counts_res = _exec("""SELECT current_employee_id, COUNT(*) AS cnt
                           FROM equipment
@@ -167,13 +154,11 @@ def search_employees_full(query, limit=20):
     result = []
     for e in emps:
         cnt = counts.get(e["id"], 0)
-        if cnt == 0:
-            continue
+        if cnt == 0: continue
         if q in _lower(e["full_name"]):
             e["eq_count"] = cnt
             result.append(e)
-        if len(result) >= limit:
-            break
+        if len(result) >= limit: break
     return result
 
 def create_employee(full_name, department, workplace, site, email=None):
@@ -184,19 +169,16 @@ def create_employee(full_name, department, workplace, site, email=None):
     return _scalar(r, 0)
 
 def get_employee(emp_id):
-    if not emp_id:
-        return None
+    if not emp_id: return None
     return _row(_exec("SELECT * FROM employees WHERE id=?", [emp_id]))
 
 # ---------- equipment ----------
 def find_by_serial(serial):
-    if not serial:
-        return None
+    if not serial: return None
     return _row(_exec("SELECT * FROM equipment WHERE serial=?", [serial]))
 
 def find_by_inventory(inv):
-    if not inv:
-        return None
+    if not inv: return None
     return _row(_exec("SELECT * FROM equipment WHERE inventory_no=?", [inv]))
 
 def get_equipment(eq_id):
@@ -220,8 +202,7 @@ def employee_equipment_stats(emp_id):
                     COUNT(*) AS total,
                     SUM(CASE WHEN verified_at IS NOT NULL THEN 1 ELSE 0 END) AS verified
                  FROM equipment WHERE current_employee_id=?""", [emp_id])
-    if not r.rows:
-        return (0, 0)
+    if not r.rows: return (0, 0)
     row = r.rows[0]
     return (row[1] or 0, row[0] or 0)
 
@@ -311,8 +292,6 @@ def get_employee_equipment(emp_id):
     return list_employee_equipment(emp_id)
 
 def universal_search(query, limit=20):
-    """Поиск по всем полям. Turso LIKE не case-insensitive для кириллицы,
-    поэтому тянем всё и фильтруем в Python. Для 4000 записей — приемлемо."""
     q = query.strip().lower()
     all_rows = _rows(_exec("""
         SELECT e.*, emp.full_name, emp.department, emp.workplace, emp.site, emp.email
@@ -373,7 +352,6 @@ def count_verified():
                     COUNT(*) AS total,
                     SUM(CASE WHEN verified_at IS NOT NULL THEN 1 ELSE 0 END) AS done
                  FROM equipment""")
-    if not r.rows:
-        return (0, 0)
+    if not r.rows: return (0, 0)
     row = r.rows[0]
     return (row[1] or 0, row[0] or 0)
