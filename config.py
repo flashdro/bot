@@ -1,11 +1,22 @@
 import os
 
-BOT_TOKEN = "8786921473:AAHtMAAKH2DjjmB25vjZIJKIIOBdd7crYK0"
-SUPER_ADMIN_IDS = {151584273}
+# ==== НАСТРОЙКИ ИЗ ПЕРЕМЕННЫХ ОКРУЖЕНИЯ (BotHost) ====
+# В самом BotHost (в разделе Переменные) ты должен задать:
+# BOT_TOKEN = твой НОВЫЙ токен от BotFather
+# SUPER_ADMIN_IDS = твой Telegram ID (число)
+# TURSO_URL = https://твой-урл.turso.io
+# TURSO_TOKEN = твой-токен-турсо
 
-# Turso (облачная БД)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+# Парсим ID админов из строки (можно указать несколько через запятую)
+_super_ids_raw = os.getenv("SUPER_ADMIN_IDS", "")
+SUPER_ADMIN_IDS = {int(x.strip()) for x in _super_ids_raw.split(",") if x.strip().isdigit()}
+
 TURSO_URL = os.getenv("TURSO_URL", "")
 TURSO_TOKEN = os.getenv("TURSO_TOKEN", "")
+
+# ==== ОСТАЛЬНЫЕ НАСТРОЙКИ ====
 
 STATUSES = ["В эксплуатации", "Не поступил", "Выбыл", "Утилизирован",
             "на складе", "в ремонте", "списано", "утеряно"]
