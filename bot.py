@@ -516,7 +516,6 @@ async def walk_loc(cb: CallbackQuery, state: FSMContext):
     await state.update_data(walk_edit_eq=eq_id)
     await state.set_state(WalkFSM.location_input)
     
-    # Кнопка "Назад" возвращает на карточку wcard:{eq_id}
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wcard:{eq_id}")]
     ])
@@ -1333,7 +1332,7 @@ async def cmd_grant(msg: Message, command: CommandObject):
         await msg.answer("⛔ Нет доступа."); return
     parts = (command.args or "").split()
     if len(parts) != 2 or parts[1] not in ROLES:
-        await msg.answer("Формат: /grant <id> <viewer|editor|admin>"); return
+        await msg.answer("Формат: /grant ID РОЛЬ\nПример: /grant 12345678 viewer"); return
     try: tg_id = int(parts[0])
     except ValueError:
         await msg.answer("ID должен быть числом."); return
@@ -1346,7 +1345,7 @@ async def cmd_revoke(msg: Message, command: CommandObject):
         await msg.answer("⛔ Нет доступа."); return
     try: tg_id = int((command.args or "").strip())
     except ValueError:
-        await msg.answer("Формат: /revoke <id>"); return
+        await msg.answer("Формат: /revoke ID\nПример: /revoke 12345678"); return
     db.delete_user(tg_id)
     await msg.answer(f"✅ {tg_id} удалён.")
 
@@ -1358,7 +1357,8 @@ async def cb_usr_grant(cb: CallbackQuery, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="usr:back")]
     ])
-    await cb.message.edit_text("Формат: <id> <viewer|editor|admin>", reply_markup=kb)
+    # Убрали треугольные скобки, чтобы Telegram не ломался
+    await cb.message.edit_text("Формат: ID РОЛЬ\nПример: 12345678 viewer", reply_markup=kb)
     await cb.answer()
 
 @router.callback_query(F.data == "usr:revoke")
@@ -1391,7 +1391,7 @@ async def cb_usr_back(cb: CallbackQuery, state: FSMContext):
 async def usr_grant_value(msg: Message, state: FSMContext):
     parts = msg.text.strip().split()
     if len(parts) != 2 or parts[1] not in ROLES:
-        await msg.answer("Формат: <id> <viewer|editor|admin>"); return
+        await msg.answer("Формат: ID РОЛЬ\nПример: 12345678 viewer"); return
     try: tg_id = int(parts[0])
     except ValueError:
         await msg.answer("ID должен быть числом."); return
@@ -1414,7 +1414,7 @@ async def cmd_find(msg: Message, command: CommandObject):
     if not has_role(msg.from_user.id, "viewer"):
         await msg.answer("⛔ Нет доступа."); return
     if not command.args:
-        await msg.answer("Использование: /find <что угодно>"); return
+        await msg.answer("Использование: /find ЧТО_ИСКАТЬ"); return
     rows = db.universal_search(command.args.strip(), limit=20)
     if not rows:
         await msg.answer(f"❌ Ничего не найдено."); return
@@ -1434,7 +1434,7 @@ async def cmd_employee(msg: Message, command: CommandObject):
     if not has_role(msg.from_user.id, "viewer"):
         await msg.answer("⛔ Нет доступа."); return
     if not command.args:
-        await msg.answer("Использование: /employee <ФИО>"); return
+        await msg.answer("Использование: /employee ФАМИЛИЯ"); return
     rows = db.search_employees_universal(command.args.strip())
     if not rows:
         await msg.answer("Ничего не найдено."); return
@@ -1457,7 +1457,7 @@ async def cmd_history(msg: Message, command: CommandObject):
     if not has_role(msg.from_user.id, "viewer"):
         await msg.answer("⛔ Нет доступа."); return
     if not command.args:
-        await msg.answer("Использование: /history <серийник>"); return
+        await msg.answer("Использование: /history СЕРИЙНИК"); return
     eq = db.find_by_serial(command.args.strip())
     if not eq:
         await msg.answer("❌ Не найдено."); return
@@ -1481,7 +1481,7 @@ async def cmd_status(msg: Message, command: CommandObject):
     if not has_role(msg.from_user.id, "editor"):
         await msg.answer("⛔ Нет доступа."); return
     if not command.args:
-        await msg.answer("Использование: /status <серийник>"); return
+        await msg.answer("Использование: /status СЕРИЙНИК"); return
     eq = db.find_by_serial(command.args.strip())
     if not eq:
         await msg.answer("❌ Не найдено."); return
