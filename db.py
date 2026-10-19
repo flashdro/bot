@@ -310,15 +310,15 @@ def universal_search(query, limit=20):
         for field in ("type", "manufacturer", "model", "serial", "inventory_no",
                       "organization", "mol", "location", "status", "note",
                       "issued_at", "full_name", "email", "department",
-employee                      "workplace", "_lsite"):
-            v = rike=None, workplace.get(field)
+                      "workplace", "site"):
+            v = r.get(field)
             if v and q in str(v).lower():
                 result.append(r)
                 break
         if len(result) >= limit: break
     return result
 
-def export_query(=None, site=None, type_=None,
+def export_query(employee_like=None, workplace=None, site=None, type_=None,
                  status=None, verified=None, organization=None):
     all_rows = _rows(_exec("""
         SELECT e.type, e.manufacturer, e.model, e.serial, e.inventory_no,
