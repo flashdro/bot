@@ -696,7 +696,7 @@ async def _walk_site_save(send_to, state, val):
     await send_msg(send_to, f"✅ Площадка: {new or '—'}")
     await walk_show_card(send_to, state, eq_id)
 
-# --- ✏️ Другое ---
+# --- ✏️ Другое (Меню редактирования полей) ---
 @router.callback_query(F.data.startswith("wc:edit:"))
 async def walk_edit(cb: CallbackQuery, state: FSMContext):
     if not has_role(cb.from_user.id, "editor"):
@@ -718,6 +718,30 @@ async def walk_edit_field(cb: CallbackQuery, state: FSMContext):
     d = await state.get_data()
     eq_id = d.get("edit_eq_id")
     eq = db.get_equipment(eq_id)
+    
+    # --- ИНТЕГРАЦИЯ КНОПОК В МЕНЮ РЕДАКТИРОВАНИЯ ---
+    if field == "status":
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=s, callback_data=f"wc_st:{eq_id}:{s}")] for s in STATUSES
+        ])
+        kb.inline_keyboard.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wc:edit:{eq_id}")])
+        await cb.message.edit_text(
+            f"Поле: *Статус*\nТекущее: `{eq['status']}`\n\nВыбери новый:",
+            parse_mode="Markdown", reply_markup=kb)
+        await cb.answer()
+        return
+
+    if field == "organization":
+        await cb.message.edit_text("🏭 Выбери организацию-собственника:", reply_markup=org_kb(eq_id))
+        await cb.answer()
+        return
+
+    if field == "mol":
+        await cb.message.edit_text("Кто МОЛ / ЛКСИ?", reply_markup=mol_kb(eq_id))
+        await cb.answer()
+        return
+
+    # Для остальных полей - ввод текстом
     await state.update_data(edit_field=field)
     await state.set_state(WalkFSM.field_edit)
     old = eq[field]
@@ -730,6 +754,22 @@ async def walk_edit_field(cb: CallbackQuery, state: FSMContext):
         f"Поле: *{EDITABLE_FIELDS[field]}*\nТекущее: `{old if old else '—'}`\n\n"
         f"Новое значение (или `-`):", parse_mode="Markdown", reply_markup=kb)
     await cb.answer()
+
+# --- Обработчик кнопок выбора статуса в меню редактирования ---
+@router.callback_query(F.data.startswith("wc_st:"))
+async def walk_status_select(cb: CallbackQuery, state: FSMContext):
+    if not has_role(cb.from_user.id, "editor"):
+        await cb.answer("Нет доступа", show_alert=True); return
+    _, eq_id_s, new_status = cb.data.split(":", 2)
+    eq_id = int(eq_id_s)
+    eq = db.get_equipment(eq_id)
+    if not eq:
+        await cb.answer("Не найдено", show_alert=True); return
+
+    db.change_status(eq_id, eq["status"], new_status, cb.from_user.id)
+    await cb.answer("✅ Статус обновлен")
+    await cb.message.edit_text(f"✅ Статус изменен на: {new_status}")
+    await walk_show_card(cb, state, eq_id)
 
 @router.message(WalkFSM.field_edit, F.text, NOT_MENU)
 async def walk_field_set(msg: Message, state: FSMContext):
@@ -1023,6 +1063,15 @@ async def cb_edit_field(cb: CallbackQuery, state: FSMContext):
     d = await state.get_data()
     eq_id = d.get("edit_eq_id")
     eq = db.get_equipment(eq_id)
+    
+    if field == "status":
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=s, callback_data=f"st:{s}")] for s in STATUSES
+        ])
+        kb.inline_keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
+        await cb.message.answer(f"Текущий статус: {eq['status']}\nВыбери новый:", reply_markup=kb)
+        await cb.answer(); return
+
     await state.update_data(edit_field=field)
     await state.set_state(EditFSM.value)
     old = eq[field]
@@ -1357,7 +1406,6 @@ async def cb_usr_grant(cb: CallbackQuery, state: FSMContext):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="⬅️ Назад", callback_data="usr:back")]
     ])
-    # Убрали треугольные скобки, чтобы Telegram не ломался
     await cb.message.edit_text("Формат: ID РОЛЬ\nПример: 12345678 viewer", reply_markup=kb)
     await cb.answer()
 
