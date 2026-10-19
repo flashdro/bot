@@ -355,10 +355,17 @@ async def employee_query(msg: Message, state: FSMContext):
         text = (f"👤 {emp['full_name']}\nEmail: {emp['email'] or '—'}\n"
                 f"Отдел: {emp['department'] or '—'}\n"
                 f"Площадка: {emp['site'] or '—'}\nТехники: {len(items)}\n")
-        for it in items:
+        
+        # Показываем только первые 15 единиц, чтобы не превысить лимит Telegram
+        for it in items[:15]:
             v = " ✅" if it["verified_at"] else ""
             text += (f"  • {it['type']} {it['manufacturer'] or ''} {it['model'] or ''} "
                      f"— {it['serial'] or '—'} ({it['status']}){v}\n")
+        
+        if len(items) > 15:
+            text += f"\n...и ещё {len(items) - 15} ед.\n"
+            text += f"Нажми 🚶 Обход и введи '{msg.text.strip()}', чтобы проверить их."
+            
         await msg.answer(text)
 
 @router.message(F.text == "📜 История")
@@ -863,6 +870,7 @@ async def add_save(cb: CallbackQuery, state: FSMContext):
         serial=d["serial"], inv=d.get("inventory"), organization=None, mol=None,
         location=d.get("workplace"), status=d["status"], employee_id=emp_id,
         issued_at=d.get("issued_at"), note=d.get("note"), changed_by=cb.from_user.id)
+    db.sync()
     await state.clear()
     await cb.message.edit_text("✅ Сохранено.")
     await cb.answer()
@@ -1110,12 +1118,12 @@ async def exp_value(msg: Message, state: FSMContext):
     value = msg.text.strip()
     await state.clear()
     filters = {}
-    if field == "employee":       filters["employee_like"] = value
-    elif field == "workplace":    filters["workplace"] = value
-    elif field == "type":         filters["type_"] = value
-    elif field == "status":       filters["status"] = value
-    elif field == "site":         filters["site"] = value
-    elif field == "organization": filters["organization"] = value
+    if field == "employee":      filters["employee_like"] = value
+    elif field == "workplace":   filters["workplace"] = value
+    elif field == "type":        filters["type_"] = value
+    elif field == "status":      filters["status"] = value
+    elif field == "site":        filters["site"] = value
+    elif field == "organization":filters["organization"] = value
     rows = db.export_query(**filters)
     if not rows:
         await msg.answer("Нет данных."); return
@@ -1143,6 +1151,7 @@ async def handle_doc(msg: Message):
     file = await msg.bot.get_file(doc.file_id)
     buf = await msg.bot.download_file(file.file_path)
     rows = excel_io.parse_xlsx(buf.read())
+    
     await msg.answer(f"⏳ Обрабатываю {len(rows)} строк...")
     added, skipped, no_serial = 0, 0, 0
     for r in rows:
@@ -1185,6 +1194,10 @@ async def handle_doc(msg: Message):
             note=r.get("note"),
             changed_by=msg.from_user.id)
         added += 1
+        
+    await msg.answer("⏳ Данные загружены в память. Отправляю в облако Turso, подожди...")
+    db.sync()
+    
     await msg.answer(f"✅ Импорт завершён.\nДобавлено: {added}\n"
                      f"Пропущено (дубли): {skipped}\nБез серийника: {no_serial}")
 
@@ -1299,10 +1312,13 @@ async def cmd_employee(msg: Message, command: CommandObject):
         text = (f"👤 {emp['full_name']}\nEmail: {emp['email'] or '—'}\n"
                 f"Отдел: {emp['department'] or '—'}\n"
                 f"Площадка: {emp['site'] or '—'}\nТехники: {len(items)}\n")
-        for it in items:
+        for it in items[:15]:
             v = " ✅" if it["verified_at"] else ""
             text += (f"  • {it['type']} {it['manufacturer'] or ''} {it['model'] or ''} "
                      f"— {it['serial'] or '—'} ({it['status']}){v}\n")
+        if len(items) > 15:
+            text += f"\n...и ещё {len(items) - 15} ед.\n"
+            text += f"Нажми 🚶 Обход и введи '{command.args.strip()}', чтобы проверить их."
         await msg.answer(text)
 
 @router.message(Command("history"))
