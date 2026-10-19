@@ -68,6 +68,7 @@ def _get_conn():
             sync_url=TURSO_URL,
             auth_token=TURSO_TOKEN
         )
+        _conn.sync() # Синхронизация при первом подключении
     return _conn
 
 @contextmanager
@@ -84,7 +85,7 @@ def _exec(sql, params=None):
     conn = _get_conn()
     safe_params = tuple(params) if params else ()
     cur = conn.execute(sql, safe_params)
-    conn.commit()  # Обязательно фиксируем изменения
+    conn.commit()
     return cur
 
 def _rows(cursor):
@@ -107,15 +108,17 @@ def _lower(s):
     return s.lower() if isinstance(s, str) else s
 
 def init_db():
+    print("Инициализация базы данных Turso...")
     conn = _get_conn()
     for stmt in SCHEMA_STATEMENTS:
-        conn.execute(stmt)
+        try:
+            conn.execute(stmt)
+        except Exception as e:
+            print(f"Ошибка создания таблицы: {e}")
     conn.commit()
-    # Синхронизируем созданные таблицы с облаком Turso
-    try:
-        conn.sync()
-    except Exception as e:
-        print(f"Sync error in init_db: {e}")
+    print("Схема создана. Синхронизация с облаком...")
+    conn.sync()
+    print("Синхронизация завершена.")
 
 # ---------- users ----------
 def get_user_role(tg_id):
