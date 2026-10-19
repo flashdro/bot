@@ -1,6 +1,6 @@
 from contextlib import contextmanager
 from config import TURSO_URL, TURSO_TOKEN
-import libsql_client
+import turso
 
 SCHEMA_STATEMENTS = [
     """CREATE TABLE IF NOT EXISTS users (
@@ -58,47 +58,55 @@ SCHEMA_STATEMENTS = [
     "CREATE INDEX IF NOT EXISTS idx_hist_eq        ON history(equipment_id)",
 ]
 
-_client = None
+_conn = None
 
-def _get_client():
-    global _client
-    if _client is None:
-        url = TURSO_URL.replace("libsql://", "https://")
-        if not url.startswith("https://"):
-            url = "https://" + url.replace("http://", "")
-        _client = libsql_client.create_client_sync(url, auth_token=TURSO_TOKEN, scheme="https")
-    return _client
+def _get_conn():
+    global _conn
+    if _conn is None:
+        _conn = turso.sync.connect(
+            "inventory.db", # локальный файл для кэша
+            remote_url=TURSO_URL,
+            auth_token=TURSO_TOKEN
+        )
+    return _conn
 
 @contextmanager
 def get_conn():
-    yield _get_client()
+    conn = _get_conn()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
 
 def _exec(sql, params=None):
-    client = _get_client()
-    if params:
-        return client.execute(sql, list(params))
-    return client.execute(sql)
+    conn = _get_conn()
+    cur = conn.execute(sql, params or [])
+    conn.commit() # Важно для синхронизации
+    return cur
 
-def _rows(result):
-    if not result.rows: return []
-    cols = result.columns
-    return [dict(zip(cols, row)) for row in result.rows]
+def _rows(cursor):
+    if not cursor.description:
+        return []
+    columns = [col[0] for col in cursor.description]
+    return [dict(zip(columns, row)) for row in cursor.fetchall()]
 
-def _row(result):
-    rows = _rows(result)
+def _row(cursor):
+    rows = _rows(cursor)
     return rows[0] if rows else None
 
-def _scalar(result, default=0):
-    if result.rows and result.rows[0]:
-        v = result.rows[0][0]
-        return v if v is not None else default
+def _scalar(cursor, default=0):
+    row = cursor.fetchone()
+    if row and row[0] is not None:
+        return row[0]
     return default
 
 def _lower(s):
     return s.lower() if isinstance(s, str) else s
 
 def init_db():
-    print("Инициализация базы данных Turso (HTTP)...")
+    print("Инициализация базы данных Turso (pyturso)...")
     for stmt in SCHEMA_STATEMENTS:
         try:
             _exec(stmt)
@@ -108,8 +116,8 @@ def init_db():
 
 # ---------- users ----------
 def get_user_role(tg_id):
-    r = _exec("SELECT role FROM users WHERE telegram_id=?", [tg_id])
-    return _scalar(r) if r.rows else None
+    cur = _exec("SELECT role FROM users WHERE telegram_id=?", [tg_id])
+    return _scalar(cur) if cur else None
 
 def upsert_user(tg_id, full_name, role, added_by=None):
     _exec("""INSERT INTO users(telegram_id, full_name, role, added_by)
@@ -128,17 +136,17 @@ def delete_user(tg_id):
 # ---------- employees ----------
 def find_employee_exact(full_name):
     target = full_name.strip().lower()
-    rows = _rows(_exec("SELECT * FROM employees"))
-    for r in rows:
+    cur = _exec("SELECT * FROM employees")
+    for r in _rows(cur):
         if _lower(r["full_name"]).strip() == target:
             return r
     return None
 
 def search_employees_universal(query, limit=10):
     q = query.strip().lower()
-    rows = _rows(_exec("SELECT * FROM employees ORDER BY full_name"))
+    cur = _exec("SELECT * FROM employees ORDER BY full_name")
     result = []
-    for r in rows:
+    for r in _rows(cur):
         for field in ("full_name", "department", "workplace", "site", "email"):
             v = r.get(field)
             if v and q in str(v).lower():
@@ -155,35 +163,40 @@ def search_employees_full(query, limit=20):
                           FROM equipment
                           WHERE current_employee_id IS NOT NULL
                           GROUP BY current_employee_id""")
-    counts = {r[0]: r[1] for r in counts_res.rows}
+    counts = {row[0]: row[1] for row in counts_res.fetchall()}
     result = []
     for e in emps:
         cnt = counts.get(e["id"], 0)
-        if cnt == 0: continue
+        if cnt == 0:
+            continue
         if q in _lower(e["full_name"]):
             e["eq_count"] = cnt
             result.append(e)
-        if len(result) >= limit: break
+        if len(result) >= limit:
+            break
     return result
 
 def create_employee(full_name, department, workplace, site, email=None):
     _exec("""INSERT INTO employees(full_name, department, workplace, site, email)
              VALUES(?,?,?,?,?)""",
           [full_name, department, workplace, site, email])
-    r = _exec("SELECT last_insert_rowid()")
-    return _scalar(r, 0)
+    cur = _exec("SELECT last_insert_rowid()")
+    return _scalar(cur, 0)
 
 def get_employee(emp_id):
-    if not emp_id: return None
+    if not emp_id:
+        return None
     return _row(_exec("SELECT * FROM employees WHERE id=?", [emp_id]))
 
 # ---------- equipment ----------
 def find_by_serial(serial):
-    if not serial: return None
+    if not serial:
+        return None
     return _row(_exec("SELECT * FROM equipment WHERE serial=?", [serial]))
 
 def find_by_inventory(inv):
-    if not inv: return None
+    if not inv:
+        return None
     return _row(_exec("SELECT * FROM equipment WHERE inventory_no=?", [inv]))
 
 def get_equipment(eq_id):
@@ -203,12 +216,13 @@ def list_employee_equipment(emp_id):
                        [emp_id]))
 
 def employee_equipment_stats(emp_id):
-    r = _exec("""SELECT
+    cur = _exec("""SELECT
                     COUNT(*) AS total,
                     SUM(CASE WHEN verified_at IS NOT NULL THEN 1 ELSE 0 END) AS verified
                  FROM equipment WHERE current_employee_id=?""", [emp_id])
-    if not r.rows: return (0, 0)
-    row = r.rows[0]
+    row = cur.fetchone()
+    if not row:
+        return (0, 0)
     return (row[1] or 0, row[0] or 0)
 
 def create_equipment(type_, manufacturer, model, serial, inv, organization, mol,
@@ -219,8 +233,7 @@ def create_equipment(type_, manufacturer, model, serial, inv, organization, mol,
         VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
         [type_, manufacturer, model, serial, inv, organization, mol,
          location, status, employee_id, issued_at, note])
-    r = _exec("SELECT last_insert_rowid()")
-    eq_id = _scalar(r, 0)
+    eq_id = _scalar(_exec("SELECT last_insert_rowid()"), 0)
     _exec("""INSERT INTO history(equipment_id, action, to_employee_id, new_value, changed_by)
              VALUES(?, 'create', ?, ?, ?)""", [eq_id, employee_id, status, changed_by])
     return eq_id
@@ -298,14 +311,14 @@ def get_employee_equipment(emp_id):
 
 def universal_search(query, limit=20):
     q = query.strip().lower()
-    all_rows = _rows(_exec("""
+    cur = _exec("""
         SELECT e.*, emp.full_name, emp.department, emp.workplace, emp.site, emp.email
         FROM equipment e
         LEFT JOIN employees emp ON emp.id = e.current_employee_id
         ORDER BY emp.full_name, e.type
-    """))
+    """)
     result = []
-    for r in all_rows:
+    for r in _rows(cur):
         for field in ("type", "manufacturer", "model", "serial", "inventory_no",
                       "organization", "mol", "location", "status", "note",
                       "issued_at", "full_name", "email", "department",
@@ -314,12 +327,13 @@ def universal_search(query, limit=20):
             if v and q in str(v).lower():
                 result.append(r)
                 break
-        if len(result) >= limit: break
+        if len(result) >= limit:
+            break
     return result
 
 def export_query(employee_like=None, workplace=None, site=None, type_=None,
                  status=None, verified=None, organization=None):
-    all_rows = _rows(_exec("""
+    cur = _exec("""
         SELECT e.type, e.manufacturer, e.model, e.serial, e.inventory_no,
                e.organization, e.mol, e.location, e.status,
                emp.full_name, emp.email, emp.department, emp.workplace, emp.site,
@@ -327,7 +341,8 @@ def export_query(employee_like=None, workplace=None, site=None, type_=None,
         FROM equipment e
         LEFT JOIN employees emp ON emp.id = e.current_employee_id
         ORDER BY emp.full_name, e.type
-    """))
+    """)
+    all_rows = _rows(cur)
     def match(r):
         if employee_like and (not r.get("full_name") or
                               employee_like.lower() not in r["full_name"].lower()):
@@ -352,10 +367,11 @@ def export_query(employee_like=None, workplace=None, site=None, type_=None,
     return [r for r in all_rows if match(r)]
 
 def count_verified():
-    r = _exec("""SELECT
+    cur = _exec("""SELECT
                     COUNT(*) AS total,
                     SUM(CASE WHEN verified_at IS NOT NULL THEN 1 ELSE 0 END) AS done
                  FROM equipment""")
-    if not r.rows: return (0, 0)
-    row = r.rows[0]
+    row = cur.fetchone()
+    if not row:
+        return (0, 0)
     return (row[1] or 0, row[0] or 0)
