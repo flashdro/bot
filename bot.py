@@ -93,15 +93,17 @@ def site_kb():
     ])
 
 def org_kb(eq_id):
-    b = [[InlineKeyboardButton(text=o, callback_data=f"worq:{eq_id}:{o}")]
-         for o in ORGANIZATIONS_QUICK]
+    # ИСПОЛЬЗУЕМ enumerate для передачи ИНДЕКСА вместо длинного текста
+    b = [[InlineKeyboardButton(text=o, callback_data=f"worq:{eq_id}:{i}")]
+         for i, o in enumerate(ORGANIZATIONS_QUICK)]
     b.append([InlineKeyboardButton(text="✏️ Вручную", callback_data=f"worq:{eq_id}:manual")])
     b.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"worq:{eq_id}:back")])
     return InlineKeyboardMarkup(inline_keyboard=b)
 
 def mol_kb(eq_id):
-    b = [[InlineKeyboardButton(text=m, callback_data=f"wmol:{eq_id}:{m}")]
-         for m in MOLS_QUICK]
+    # ИСПОЛЬЗУЕМ enumerate для передачи ИНДЕКСА вместо длинного текста
+    b = [[InlineKeyboardButton(text=m, callback_data=f"wmol:{eq_id}:{i}")]
+         for i, m in enumerate(MOLS_QUICK)]
     b.append([InlineKeyboardButton(text="✏️ Вручную", callback_data=f"wmol:{eq_id}:manual")])
     b.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wmol:{eq_id}:back")])
     return InlineKeyboardMarkup(inline_keyboard=b)
@@ -159,7 +161,6 @@ def equipment_card_kb(eq):
     ])
 
 def equipment_card_text(eq):
-    """eq — результат get_equipment_full или universal_search (содержит emp.full_name/email/department/workplace/site)."""
     text = (f"🔧 {eq['type']} — {eq['manufacturer'] or ''}\n"
             f"Модель: {eq['model'] or '—'}\n"
             f"Серийный: {eq['serial'] or '—'}\n"
@@ -169,7 +170,6 @@ def equipment_card_text(eq):
             f"Место установки: {eq['location'] or '—'}\n"
             f"Статус: {eq['status']}\n"
             f"Дата выдачи: {eq['issued_at'] or '—'}\n")
-    # emp поля уже в row (из universal_search / get_equipment_full)
     if eq["full_name"]:
         text += (f"\n👤 {eq['full_name']}\n"
                  f"Email: {eq['email'] or '—'}\n"
@@ -238,7 +238,6 @@ async def walk_refresh_employee(send_to, state):
     await walk_show_employee(send_to, state, emp)
 
 def walk_card_text(eq):
-    """eq — результат get_equipment_full (emp поля уже в row)."""
     text = (f"🔧 {eq['type']} — {eq['manufacturer'] or ''} {eq['model'] or ''}\n"
             f"Серийный: {eq['serial'] or '—'}\n"
             f"Инв.: {eq['inventory_no'] or '—'}\n"
@@ -356,7 +355,6 @@ async def employee_query(msg: Message, state: FSMContext):
                 f"Отдел: {emp['department'] or '—'}\n"
                 f"Площадка: {emp['site'] or '—'}\nТехники: {len(items)}\n")
         
-        # Показываем только первые 15 единиц, чтобы не превысить лимит Telegram
         for it in items[:15]:
             v = " ✅" if it["verified_at"] else ""
             text += (f"  • {it['type']} {it['manufacturer'] or ''} {it['model'] or ''} "
@@ -379,13 +377,13 @@ async def btn_history(msg: Message, state: FSMContext):
 @router.message(HistoryFSM.waiting, F.text, NOT_MENU)
 async def history_serial(msg: Message, state: FSMContext):
     await state.clear()
-    eq = db.find_by_serial(msg.text.strip())
+    eq = db.find_by_verifiedserial(msg.text.strip())
     if not eq:
-        await msg.answer("❌ Не найдено."); return
-    rows = db.get_history(eq["id"])
-    if not rows:
+        await msg.answer("❌(e Не найдено."); return
+q    rows = db.get_history(eq["id"])
+_id    if not rows:
         await msg.answer("История пуста."); return
-    lines = [f"📜 История {eq['serial']}:"]
+    lines, = [f"📜 История {eq['serial']} cb:"]
     for h in rows:
         act = h["action"]
         if act == "create":
@@ -469,7 +467,7 @@ async def walk_ok(cb: CallbackQuery, state: FSMContext):
     if not has_role(cb.from_user.id, "editor"):
         await cb.answer("Нет доступа", show_alert=True); return
     eq_id = int(cb.data.split(":")[2])
-    db.mark_verified(eq_id, cb.from_user.id, True)
+    db.mark_.from_user.id, True)
     await cb.answer("✅ Проверено")
     await kill_old(cb)
     await walk_refresh_employee(cb, state)
@@ -525,6 +523,7 @@ async def walk_org_cb(cb: CallbackQuery, state: FSMContext):
         await cb.answer("Нет доступа", show_alert=True); return
     _, eq_id_s, val = cb.data.split(":", 2)
     eq_id = int(eq_id_s)
+    
     if val == "manual":
         await cb.message.edit_reply_markup(reply_markup=None)
         await state.update_data(walk_edit_eq=eq_id)
@@ -532,13 +531,21 @@ async def walk_org_cb(cb: CallbackQuery, state: FSMContext):
         await cb.message.answer("Введи организацию вручную (или `-`):",
                                 parse_mode="Markdown")
         await cb.answer(); return
+        
     if val == "back":
         await kill_old(cb)
         await walk_show_card(cb, state, eq_id)
         await cb.answer(); return
-    db.edit_equipment_field(eq_id, "organization", val, cb.from_user.id)
+        
+    # ПОЛУЧАЕМ ТЕКСТ ИЗ СПИСКА ПО ИНДЕКСУ
+    try:
+        org_name = ORGANIZATIONS_QUICK[int(val)]
+    except (ValueError, IndexError):
+        await cb.answer("Ошибка выбора", show_alert=True); return
+
+    db.edit_equipment_field(eq_id, "organization", org_name, cb.from_user.id)
     await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer(f"✅ Организация: {val}")
+    await cb.message.answer(f"✅ Организация: {org_name}")
     await cb.answer()
     await walk_show_card(cb, state, eq_id)
 
@@ -568,6 +575,7 @@ async def walk_mol_cb(cb: CallbackQuery, state: FSMContext):
         await cb.answer("Нет доступа", show_alert=True); return
     _, eq_id_s, val = cb.data.split(":", 2)
     eq_id = int(eq_id_s)
+    
     if val == "manual":
         await cb.message.edit_reply_markup(reply_markup=None)
         await state.update_data(walk_edit_eq=eq_id)
@@ -575,13 +583,21 @@ async def walk_mol_cb(cb: CallbackQuery, state: FSMContext):
         await cb.message.answer("Введи ФИО МОЛ/ЛКСИ (или `-`):",
                                 parse_mode="Markdown")
         await cb.answer(); return
+        
     if val == "back":
         await kill_old(cb)
         await walk_show_card(cb, state, eq_id)
         await cb.answer(); return
-    db.edit_equipment_field(eq_id, "mol", val, cb.from_user.id)
+        
+    # ПОЛУЧАЕМ ТЕКСТ ИЗ СПИСКА ПО ИНДЕКСУ
+    try:
+        mol_name = MOLS_QUICK[int(val)]
+    except (ValueError, IndexError):
+        await cb.answer("Ошибка выбора", show_alert=True); return
+
+    db.edit_equipment_field(eq_id, "mol", mol_name, cb.from_user.id)
     await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer(f"✅ МОЛ: {val}")
+    await cb.message.answer(f"✅ МОЛ: {mol_name}")
     await cb.answer()
     await walk_show_card(cb, state, eq_id)
 
