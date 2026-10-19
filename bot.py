@@ -380,7 +380,7 @@ async def history_serial(msg: Message, state: FSMContext):
     eq = db.find_by_verifiedserial(msg.text.strip())
     if not eq:
         await msg.answer("❌(e Не найдено."); return
-q    rows = db.get_history(eq["id"])
+    rows = db.get_history(eq["id"])
 _id    if not rows:
         await msg.answer("История пуста."); return
     lines, = [f"📜 История {eq['serial']} cb:"]
