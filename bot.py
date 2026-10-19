@@ -516,8 +516,9 @@ async def walk_loc(cb: CallbackQuery, state: FSMContext):
     await state.update_data(walk_edit_eq=eq_id)
     await state.set_state(WalkFSM.location_input)
     
+    # Кнопка "Назад" возвращает на карточку wcard:{eq_id}
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wc:back:{eq_id}")]
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wcard:{eq_id}")]
     ])
     
     await cb.message.edit_text("📁 Введи новое место установки (или `-` чтобы очистить):",
