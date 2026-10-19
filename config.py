@@ -7,7 +7,7 @@ import os
 # TURSO_URL = https://твой-урл.turso.io
 # TURSO_TOKEN = твой-токен-турсо
 
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN_NEW")
 
 # Парсим ID админов из строки (можно указать несколько через запятую)
 _super_ids_raw = os.getenv("SUPER_ADMIN_IDS", "")
