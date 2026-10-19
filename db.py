@@ -1,5 +1,6 @@
 from contextlib import contextmanager
 from config import TURSO_URL, TURSO_TOKEN
+import turso.sync
 import turso
 
 SCHEMA_STATEMENTS = [
@@ -63,9 +64,14 @@ _conn = None
 def _get_conn():
     global _conn
     if _conn is None:
+        # Жестко приводим URL к формату https
+        url = TURSO_URL.replace("libsql://", "https://")
+        if not url.startswith("https://"):
+            url = "https://" + url.replace("http://", "")
+            
         _conn = turso.sync.connect(
-            "inventory.db", # локальный файл для кэша
-            remote_url=TURSO_URL,
+            "inventory.db", # Локальный файл для кэша
+            remote_url=url,
             auth_token=TURSO_TOKEN
         )
     return _conn
@@ -83,7 +89,11 @@ def get_conn():
 def _exec(sql, params=None):
     conn = _get_conn()
     cur = conn.execute(sql, params or [])
-    conn.commit() # Важно для синхронизации
+    conn.commit() # Фиксируем локально
+    try:
+        conn.push() # Сразу пушим изменения в облако Turso
+    except Exception as e:
+        print(f"Push error: {e}")
     return cur
 
 def _rows(cursor):
@@ -106,13 +116,19 @@ def _lower(s):
     return s.lower() if isinstance(s, str) else s
 
 def init_db():
-    print("Инициализация базы данных Turso (pyturso)...")
+    print("Инициализация базы данных Turso (pyturso sync)...")
+    conn = _get_conn()
     for stmt in SCHEMA_STATEMENTS:
         try:
-            _exec(stmt)
+            conn.execute(stmt)
         except Exception as e:
             print(f"Ошибка создания таблицы: {e}")
-    print("Схема создана.")
+    conn.commit()
+    try:
+        conn.push()
+    except Exception as e:
+        print(f"Push error in init_db: {e}")
+    print("Схема создана и синхронизирована.")
 
 # ---------- users ----------
 def get_user_role(tg_id):
