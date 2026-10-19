@@ -63,11 +63,10 @@ _client = None
 def _get_client():
     global _client
     if _client is None:
-        # ЖЕСТКО фиксируем https, даже если в переменной ошибка
         url = TURSO_URL.replace("libsql://", "https://")
         if not url.startswith("https://"):
             url = "https://" + url.replace("http://", "")
-        _client = libsql_client.create_client_sync(url, auth_token=TURSO_TOKEN)
+        _client = libsql_client.create_client_sync(url, auth_token=TURSO_TOKEN, scheme="https")
     return _client
 
 @contextmanager
