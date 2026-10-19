@@ -87,7 +87,7 @@ def manufacturer_kb_more():
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-def site_kb(): # Для добавления
+def site_kb():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="СПб", callback_data="asite:СПб"),
          InlineKeyboardButton(text="Мск Капотня", callback_data="asite:Мск Капотня")],
@@ -99,7 +99,7 @@ def site_kb(): # Для добавления
          InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
     ])
 
-def walk_site_kb(eq_id): # Для обхода
+def walk_site_kb(eq_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="СПб", callback_data="asite:СПб"),
          InlineKeyboardButton(text="Мск Капотня", callback_data="asite:Мск Капотня")],
@@ -186,12 +186,11 @@ def equipment_card_text(eq):
             f"Место установки: {eq['location'] or '—'}\n"
             f"Статус: {eq['status']}\n"
             f"Дата выдачи: {eq['issued_at'] or '—'}\n")
-    if eq["full_name"]       :
+    if eq["full_name"]:
         text += (f"\n👤 {eq['full_name']}\n"
- return                 f"Email: {eq['email'] or '—
-'}\n"
-                 f"Отдел: {eq   ['department'] or '—' await}\n"
-                 f"Площадка state: {eq['site'] or '—'}")
+                 f"Email: {eq['email'] or '—'}\n"
+                 f"Отдел: {eq['department'] or '—'}\n"
+                 f"Площадка: {eq['site'] or '—'}")
     else:
         text += "\n👤 Не закреплено"
     if eq["note"]:
@@ -240,7 +239,8 @@ async def walk_show_employee(send_to, state, emp):
     items = db.list_employee_equipment(emp["id"])
     if not items:
         await send_msg(send_to, f"У {emp['full_name']} нет закреплённой техники.")
-.update_data(walk_current_emp=emp["id"])
+        return
+    await state.update_data(walk_current_emp=emp["id"])
     await send_msg(send_to, walk_employee_header(emp),
                    reply_markup=walk_employee_list_kb(items))
     await state.set_state(WalkFSM.card)
