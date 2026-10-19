@@ -64,7 +64,7 @@ def _get_conn():
     global _conn
     if _conn is None:
         _conn = libsql.connect(
-            "inventory.db", # локальный файл для кэша
+            "inventory.db",
             sync_url=TURSO_URL,
             auth_token=TURSO_TOKEN
         )
@@ -82,9 +82,9 @@ def get_conn():
 
 def _exec(sql, params=None):
     conn = _get_conn()
-    # Переводим список в кортеж, чтобы libsql_experimental не ругался
     safe_params = tuple(params) if params else ()
     cur = conn.execute(sql, safe_params)
+    conn.commit()  # Обязательно фиксируем изменения
     return cur
 
 def _rows(cursor):
@@ -107,11 +107,15 @@ def _lower(s):
     return s.lower() if isinstance(s, str) else s
 
 def init_db():
+    conn = _get_conn()
     for stmt in SCHEMA_STATEMENTS:
-        try:
-            _exec(stmt)
-        except Exception as e:
-            print(f"Schema init warning: {e}")
+        conn.execute(stmt)
+    conn.commit()
+    # Синхронизируем созданные таблицы с облаком Turso
+    try:
+        conn.sync()
+    except Exception as e:
+        print(f"Sync error in init_db: {e}")
 
 # ---------- users ----------
 def get_user_role(tg_id):
