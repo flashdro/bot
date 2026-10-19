@@ -377,13 +377,13 @@ async def btn_history(msg: Message, state: FSMContext):
 @router.message(HistoryFSM.waiting, F.text, NOT_MENU)
 async def history_serial(msg: Message, state: FSMContext):
     await state.clear()
-    eq = db.find_by_verifiedserial(msg.text.strip())
+    eq = db.find_by_serial(msg.text.strip())
     if not eq:
-        await msg.answer("❌(e Не найдено."); return
+        await msg.answer("❌ Не найдено."); return
     rows = db.get_history(eq["id"])
-_id    if not rows:
+    if not rows:
         await msg.answer("История пуста."); return
-    lines, = [f"📜 История {eq['serial']} cb:"]
+    lines = [f"📜 История {eq['serial']}:"]
     for h in rows:
         act = h["action"]
         if act == "create":
@@ -467,7 +467,7 @@ async def walk_ok(cb: CallbackQuery, state: FSMContext):
     if not has_role(cb.from_user.id, "editor"):
         await cb.answer("Нет доступа", show_alert=True); return
     eq_id = int(cb.data.split(":")[2])
-    db.mark_.from_user.id, True)
+    db.mark_verified(eq_id, cb.from_user.id, True)
     await cb.answer("✅ Проверено")
     await kill_old(cb)
     await walk_refresh_employee(cb, state)
