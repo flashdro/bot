@@ -82,7 +82,9 @@ def get_conn():
 
 def _exec(sql, params=None):
     conn = _get_conn()
-    cur = conn.execute(sql, params or [])
+    # Переводим список в кортеж, чтобы libsql_experimental не ругался
+    safe_params = tuple(params) if params else ()
+    cur = conn.execute(sql, safe_params)
     return cur
 
 def _rows(cursor):
