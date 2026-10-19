@@ -64,13 +64,12 @@ _conn = None
 def _get_conn():
     global _conn
     if _conn is None:
-        # Жестко приводим URL к формату https
         url = TURSO_URL.replace("libsql://", "https://")
         if not url.startswith("https://"):
             url = "https://" + url.replace("http://", "")
             
         _conn = turso.sync.connect(
-            "inventory.db", # Локальный файл для кэша
+            "inventory.db",
             remote_url=url,
             auth_token=TURSO_TOKEN
         )
@@ -89,12 +88,15 @@ def get_conn():
 def _exec(sql, params=None):
     conn = _get_conn()
     cur = conn.execute(sql, params or [])
-    conn.commit() # Фиксируем локально
-    try:
-        conn.push() # Сразу пушим изменения в облако Turso
-    except Exception as e:
-        print(f"Push error: {e}")
+    conn.commit()
     return cur
+
+def sync():
+    """Отправляет все локальные изменения в облако Turso."""
+    try:
+        _get_conn().push()
+    except Exception as e:
+        print(f"Ошибка синхронизации (push): {e}")
 
 def _rows(cursor):
     if not cursor.description:
@@ -116,19 +118,16 @@ def _lower(s):
     return s.lower() if isinstance(s, str) else s
 
 def init_db():
-    print("Инициализация базы данных Turso (pyturso sync)...")
+    print("Инициализация локальной БД...")
     conn = _get_conn()
     for stmt in SCHEMA_STATEMENTS:
         try:
             conn.execute(stmt)
         except Exception as e:
-            print(f"Ошибка создания таблицы: {e}")
+            print(f"Ошибка схемы: {e}")
     conn.commit()
-    try:
-        conn.push()
-    except Exception as e:
-        print(f"Push error in init_db: {e}")
-    print("Схема создана и синхронизирована.")
+    sync()
+    print("Схема готова.")
 
 # ---------- users ----------
 def get_user_role(tg_id):
@@ -142,12 +141,14 @@ def upsert_user(tg_id, full_name, role, added_by=None):
                role=excluded.role,
                full_name=COALESCE(excluded.full_name, users.full_name)""",
           [tg_id, full_name, role, added_by])
+    sync()
 
 def list_users():
     return _rows(_exec("SELECT * FROM users ORDER BY added_at"))
 
 def delete_user(tg_id):
     _exec("DELETE FROM users WHERE telegram_id=?", [tg_id])
+    sync()
 
 # ---------- employees ----------
 def find_employee_exact(full_name):
@@ -259,11 +260,13 @@ def move_equipment(eq_id, from_emp, to_emp, new_issued_at, changed_by):
           [to_emp, new_issued_at, eq_id])
     _exec("""INSERT INTO history(equipment_id, action, from_employee_id, to_employee_id, changed_by)
              VALUES(?, 'move', ?, ?, ?)""", [eq_id, from_emp, to_emp, changed_by])
+    sync()
 
 def change_status(eq_id, old_status, new_status, changed_by):
     _exec("UPDATE equipment SET status=? WHERE id=?", [new_status, eq_id])
     _exec("""INSERT INTO history(equipment_id, action, old_value, new_value, changed_by)
              VALUES(?, 'status_change', ?, ?, ?)""", [eq_id, old_status, new_status, changed_by])
+    sync()
 
 def mark_verified(eq_id, changed_by, verified=True):
     from datetime import datetime
@@ -279,6 +282,7 @@ def mark_verified(eq_id, changed_by, verified=True):
         _exec("""INSERT INTO history(equipment_id, action, new_value, changed_by)
                  VALUES(?, 'unverified', 'снята отметка проверки', ?)""",
               [eq_id, changed_by])
+    sync()
 
 def edit_equipment_field(eq_id, field, new_value, changed_by):
     allowed = {"type", "manufacturer", "model", "serial", "inventory_no",
@@ -304,6 +308,7 @@ def edit_equipment_field(eq_id, field, new_value, changed_by):
            str(old_value) if old_value is not None else None,
            str(new_value) if new_value is not None else None,
            changed_by])
+    sync()
     return True, None
 
 def edit_employee_field(emp_id, field, new_value, changed_by):
@@ -313,6 +318,7 @@ def edit_employee_field(emp_id, field, new_value, changed_by):
     if not get_employee(emp_id):
         return False, "Сотрудник не найден"
     _exec(f"UPDATE employees SET {field}=? WHERE id=?", [new_value, emp_id])
+    sync()
     return True, None
 
 def get_history(eq_id):
