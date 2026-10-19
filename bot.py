@@ -56,6 +56,7 @@ def type_kb():
     b = [[InlineKeyboardButton(text=t, callback_data=f"atype:{t}")] for t in TYPES_MAIN]
     rows = [b[i] + (b[i+1] if i+1 < len(b) else []) for i in range(0, len(b), 2)]
     rows.append([InlineKeyboardButton(text="Другое...", callback_data="atype_more")])
+    rows.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def type_kb_more():
@@ -71,6 +72,10 @@ def manufacturer_kb():
     b = [[InlineKeyboardButton(text=m, callback_data=f"amanf:{m}")] for m in MANUFACTURERS_MAIN]
     rows = [b[i] + (b[i+1] if i+1 < len(b) else []) for i in range(0, len(b), 2)]
     rows.append([InlineKeyboardButton(text="Другое...", callback_data="amanf_more")])
+    rows.append([
+        InlineKeyboardButton(text="⬅️ Назад", callback_data="add_back_type"),
+        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")
+    ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 def manufacturer_kb_more():
@@ -82,7 +87,7 @@ def manufacturer_kb_more():
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-def site_kb():
+def site_kb(): # Для добавления
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="СПб", callback_data="asite:СПб"),
          InlineKeyboardButton(text="Мск Капотня", callback_data="asite:Мск Капотня")],
@@ -90,10 +95,22 @@ def site_kb():
          InlineKeyboardButton(text="Омск ОНПЗ", callback_data="asite:Омск ОНПЗ")],
         [InlineKeyboardButton(text="Омск Кронштадт", callback_data="asite:Омск Кронштадт")],
         [InlineKeyboardButton(text="✏️ Вручную", callback_data="asite_manual")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="add_back_manf"),
+         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ])
+
+def walk_site_kb(eq_id): # Для обхода
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="СПб", callback_data="asite:СПб"),
+         InlineKeyboardButton(text="Мск Капотня", callback_data="asite:Мск Капотня")],
+        [InlineKeyboardButton(text="Мск МНПЗ", callback_data="asite:Мск МНПЗ"),
+         InlineKeyboardButton(text="Омск ОНПЗ", callback_data="asite:Омск ОНПЗ")],
+        [InlineKeyboardButton(text="Омск Кронштадт", callback_data="asite:Омск Кронштадт")],
+        [InlineKeyboardButton(text="✏️ Вручную", callback_data="asite_manual")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wc:site_back:{eq_id}")]
     ])
 
 def org_kb(eq_id):
-    # ИСПОЛЬЗУЕМ enumerate для передачи ИНДЕКСА вместо длинного текста
     b = [[InlineKeyboardButton(text=o, callback_data=f"worq:{eq_id}:{i}")]
          for i, o in enumerate(ORGANIZATIONS_QUICK)]
     b.append([InlineKeyboardButton(text="✏️ Вручную", callback_data=f"worq:{eq_id}:manual")])
@@ -101,7 +118,6 @@ def org_kb(eq_id):
     return InlineKeyboardMarkup(inline_keyboard=b)
 
 def mol_kb(eq_id):
-    # ИСПОЛЬЗУЕМ enumerate для передачи ИНДЕКСА вместо длинного текста
     b = [[InlineKeyboardButton(text=m, callback_data=f"wmol:{eq_id}:{i}")]
          for i, m in enumerate(MOLS_QUICK)]
     b.append([InlineKeyboardButton(text="✏️ Вручную", callback_data=f"wmol:{eq_id}:manual")])
@@ -170,11 +186,12 @@ def equipment_card_text(eq):
             f"Место установки: {eq['location'] or '—'}\n"
             f"Статус: {eq['status']}\n"
             f"Дата выдачи: {eq['issued_at'] or '—'}\n")
-    if eq["full_name"]:
+    if eq["full_name"]       :
         text += (f"\n👤 {eq['full_name']}\n"
-                 f"Email: {eq['email'] or '—'}\n"
-                 f"Отдел: {eq['department'] or '—'}\n"
-                 f"Площадка: {eq['site'] or '—'}")
+ return                 f"Email: {eq['email'] or '—
+'}\n"
+                 f"Отдел: {eq   ['department'] or '—' await}\n"
+                 f"Площадка state: {eq['site'] or '—'}")
     else:
         text += "\n👤 Не закреплено"
     if eq["note"]:
@@ -223,8 +240,7 @@ async def walk_show_employee(send_to, state, emp):
     items = db.list_employee_equipment(emp["id"])
     if not items:
         await send_msg(send_to, f"У {emp['full_name']} нет закреплённой техники.")
-        return
-    await state.update_data(walk_current_emp=emp["id"])
+.update_data(walk_current_emp=emp["id"])
     await send_msg(send_to, walk_employee_header(emp),
                    reply_markup=walk_employee_list_kb(items))
     await state.set_state(WalkFSM.card)
@@ -281,6 +297,13 @@ async def kill_old(cb):
     except Exception:
         pass
 
+# ---------- Глобальная отмена ----------
+@router.callback_query(F.data == "cancel")
+async def cb_cancel(cb: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await cb.message.edit_text("❌ Действие отменено. Возвращайся в меню.")
+    await cb.answer()
+
 # ---------- /start, /me, /cancel ----------
 @router.message(Command("start"))
 async def cmd_start(msg: Message, state: FSMContext):
@@ -313,7 +336,7 @@ async def btn_search(msg: Message, state: FSMContext):
         await msg.answer("⛔ Нет доступа."); return
     await state.clear()
     await state.set_state(SearchFSM.waiting)
-    await msg.answer("🔍 Введите запрос:")
+    await msg.answer("🔍 Введите запрос (или /cancel):")
 
 @router.message(SearchFSM.waiting, F.text, NOT_MENU)
 async def search_query(msg: Message, state: FSMContext):
@@ -341,7 +364,7 @@ async def btn_employee(msg: Message, state: FSMContext):
         await msg.answer("⛔ Нет доступа."); return
     await state.clear()
     await state.set_state(EmployeeFSM.waiting)
-    await msg.answer("Введите Фамилию или Фамилию И.О.:")
+    await msg.answer("Введите Фамилию или Фамилию И.О. (или /cancel):")
 
 @router.message(EmployeeFSM.waiting, F.text, NOT_MENU)
 async def employee_query(msg: Message, state: FSMContext):
@@ -372,7 +395,7 @@ async def btn_history(msg: Message, state: FSMContext):
         await msg.answer("⛔ Нет доступа."); return
     await state.clear()
     await state.set_state(HistoryFSM.waiting)
-    await msg.answer("Введи серийный номер оборудования:")
+    await msg.answer("Введи серийный номер оборудования (или /cancel):")
 
 @router.message(HistoryFSM.waiting, F.text, NOT_MENU)
 async def history_serial(msg: Message, state: FSMContext):
@@ -411,7 +434,7 @@ async def btn_walk(msg: Message, state: FSMContext):
     done, total = db.count_verified()
     await msg.answer(
         f"🚶 Режим обхода\nВсего: {total}, проверено: {done}, осталось: {total - done}\n\n"
-        f"Введи фамилию сотрудника (или часть ФИО):")
+        f"Введи фамилию сотрудника (или часть ФИО, или /cancel):")
 
 @router.message(WalkFSM.search_input, F.text, NOT_MENU)
 async def walk_search(msg: Message, state: FSMContext):
@@ -446,7 +469,7 @@ async def walk_restart(cb: CallbackQuery, state: FSMContext):
     await state.clear()
     await state.set_state(WalkFSM.search_input)
     await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer("Введи фамилию сотрудника:")
+    await cb.message.answer("Введи фамилию сотрудника (или /cancel):")
     await cb.answer()
 
 @router.callback_query(F.data == "wc:back")
@@ -492,8 +515,13 @@ async def walk_loc(cb: CallbackQuery, state: FSMContext):
     eq_id = int(cb.data.split(":")[2])
     await state.update_data(walk_edit_eq=eq_id)
     await state.set_state(WalkFSM.location_input)
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wc:back:{eq_id}")]
+    ])
+    
     await cb.message.edit_text("📁 Введи новое место установки (или `-` чтобы очистить):",
-                               parse_mode="Markdown")
+                               parse_mode="Markdown", reply_markup=kb)
     await cb.answer()
 
 @router.message(WalkFSM.location_input, F.text, NOT_MENU)
@@ -528,8 +556,11 @@ async def walk_org_cb(cb: CallbackQuery, state: FSMContext):
         await cb.message.edit_reply_markup(reply_markup=None)
         await state.update_data(walk_edit_eq=eq_id)
         await state.set_state(WalkFSM.org_manual)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wc:org:{eq_id}")]
+        ])
         await cb.message.answer("Введи организацию вручную (или `-`):",
-                                parse_mode="Markdown")
+                                parse_mode="Markdown", reply_markup=kb)
         await cb.answer(); return
         
     if val == "back":
@@ -537,7 +568,6 @@ async def walk_org_cb(cb: CallbackQuery, state: FSMContext):
         await walk_show_card(cb, state, eq_id)
         await cb.answer(); return
         
-    # ПОЛУЧАЕМ ТЕКСТ ИЗ СПИСКА ПО ИНДЕКСУ
     try:
         org_name = ORGANIZATIONS_QUICK[int(val)]
     except (ValueError, IndexError):
@@ -580,8 +610,11 @@ async def walk_mol_cb(cb: CallbackQuery, state: FSMContext):
         await cb.message.edit_reply_markup(reply_markup=None)
         await state.update_data(walk_edit_eq=eq_id)
         await state.set_state(WalkFSM.mol_manual)
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wc:mol:{eq_id}")]
+        ])
         await cb.message.answer("Введи ФИО МОЛ/ЛКСИ (или `-`):",
-                                parse_mode="Markdown")
+                                parse_mode="Markdown", reply_markup=kb)
         await cb.answer(); return
         
     if val == "back":
@@ -589,7 +622,6 @@ async def walk_mol_cb(cb: CallbackQuery, state: FSMContext):
         await walk_show_card(cb, state, eq_id)
         await cb.answer(); return
         
-    # ПОЛУЧАЕМ ТЕКСТ ИЗ СПИСКА ПО ИНДЕКСУ
     try:
         mol_name = MOLS_QUICK[int(val)]
     except (ValueError, IndexError):
@@ -623,7 +655,14 @@ async def walk_site(cb: CallbackQuery, state: FSMContext):
         return
     await state.update_data(walk_edit_eq=eq_id)
     await state.set_state(WalkFSM.site_input)
-    await cb.message.edit_text("🏢 Выбери площадку:", reply_markup=site_kb())
+    await cb.message.edit_text("🏢 Выбери площадку:", reply_markup=walk_site_kb(eq_id))
+    await cb.answer()
+
+@router.callback_query(F.data.startswith("wc:site_back:"))
+async def walk_site_back(cb: CallbackQuery, state: FSMContext):
+    eq_id = int(cb.data.split(":")[2])
+    await kill_old(cb)
+    await walk_show_card(cb, state, eq_id)
     await cb.answer()
 
 @router.callback_query(WalkFSM.site_input, F.data.startswith("asite:"))
@@ -633,8 +672,12 @@ async def walk_site_cb(cb: CallbackQuery, state: FSMContext):
 
 @router.callback_query(WalkFSM.site_input, F.data == "asite_manual")
 async def walk_site_manual(cb: CallbackQuery, state: FSMContext):
+    eq_id = (await state.get_data()).get("walk_edit_eq")
     await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer("Напиши площадку вручную:")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wc:site:{eq_id}")]
+    ])
+    await cb.message.answer("Напиши площадку вручную:", reply_markup=kb)
     await cb.answer()
 
 @router.message(WalkFSM.site_input, F.text, NOT_MENU)
@@ -662,7 +705,7 @@ async def walk_edit(cb: CallbackQuery, state: FSMContext):
     await state.update_data(edit_eq_id=eq_id)
     buttons = [[InlineKeyboardButton(text=label, callback_data=f"walkeditf:{key}")]
                for key, label in EDITABLE_FIELDS.items()]
-    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data="wc:back")])
+    buttons.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wcard:{eq_id}")])
     await cb.message.edit_text("Какое поле редактировать?",
                                reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await cb.answer()
@@ -678,9 +721,14 @@ async def walk_edit_field(cb: CallbackQuery, state: FSMContext):
     await state.update_data(edit_field=field)
     await state.set_state(WalkFSM.field_edit)
     old = eq[field]
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wc:edit:{eq_id}")]
+    ])
+    
     await cb.message.edit_text(
         f"Поле: *{EDITABLE_FIELDS[field]}*\nТекущее: `{old if old else '—'}`\n\n"
-        f"Новое значение (или `-`):", parse_mode="Markdown")
+        f"Новое значение (или `-`):", parse_mode="Markdown", reply_markup=kb)
     await cb.answer()
 
 @router.message(WalkFSM.field_edit, F.text, NOT_MENU)
@@ -726,13 +774,23 @@ async def add_type_back(cb: CallbackQuery):
 @router.callback_query(AddFSM.type_, F.data == "atype_manual")
 async def add_type_manual(cb: CallbackQuery):
     await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer("Напиши тип вручную:"); await cb.answer()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="atype_back")]
+    ])
+    await cb.message.answer("Напиши тип вручную:", reply_markup=kb); await cb.answer()
 
 @router.message(AddFSM.type_, F.text, NOT_MENU)
 async def add_type_msg(msg: Message, state: FSMContext):
     await state.update_data(type_=msg.text.strip())
     await state.set_state(AddFSM.manufacturer)
     await msg.answer(f"Тип: {msg.text.strip()}\n\nПроизводитель:", reply_markup=manufacturer_kb())
+
+# --- Back для производителя ---
+@router.callback_query(AddFSM.manufacturer, F.data == "add_back_type")
+async def add_back_to_type(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(AddFSM.type_)
+    await cb.message.edit_text("Тип оборудования:", reply_markup=type_kb())
+    await cb.answer()
 
 @router.callback_query(AddFSM.manufacturer, F.data.startswith("amanf:"))
 async def add_manf_cb(cb: CallbackQuery, state: FSMContext):
@@ -754,7 +812,10 @@ async def add_manf_back(cb: CallbackQuery):
 @router.callback_query(AddFSM.manufacturer, F.data == "amanf_manual")
 async def add_manf_manual(cb: CallbackQuery):
     await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer("Напиши производителя вручную:"); await cb.answer()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="add_back_type")]
+    ])
+    await cb.message.answer("Напиши производителя вручную:", reply_markup=kb); await cb.answer()
 
 @router.message(AddFSM.manufacturer, F.text, NOT_MENU)
 async def add_manf_msg(msg: Message, state: FSMContext):
@@ -766,7 +827,7 @@ async def add_manf_msg(msg: Message, state: FSMContext):
 async def add_model(msg: Message, state: FSMContext):
     await state.update_data(model=msg.text.strip())
     await state.set_state(AddFSM.serial)
-    await msg.answer("Серийный номер:")
+    await msg.answer("Серийный номер (или /cancel):")
 
 @router.message(AddFSM.serial)
 async def add_serial(msg: Message, state: FSMContext):
@@ -789,6 +850,7 @@ async def add_inv(msg: Message, state: FSMContext):
     await state.set_state(AddFSM.status)
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=s, callback_data=f"st:{s}")] for s in STATUSES])
+    kb.inline_keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     await msg.answer("Статус:", reply_markup=kb)
 
 @router.callback_query(AddFSM.status, F.data.startswith("st:"))
@@ -830,6 +892,13 @@ async def add_wp(msg: Message, state: FSMContext):
     await state.set_state(AddFSM.site)
     await msg.answer("Площадка:", reply_markup=site_kb())
 
+# --- Back для площадки ---
+@router.callback_query(AddFSM.site, F.data == "add_back_manf")
+async def add_back_to_manf(cb: CallbackQuery, state: FSMContext):
+    await state.set_state(AddFSM.manufacturer)
+    await cb.message.edit_text("Производитель:", reply_markup=manufacturer_kb())
+    await cb.answer()
+
 @router.callback_query(AddFSM.site, F.data.startswith("asite:"))
 async def add_site_cb(cb: CallbackQuery, state: FSMContext):
     value = cb.data.split(":", 1)[1]
@@ -842,7 +911,10 @@ async def add_site_cb(cb: CallbackQuery, state: FSMContext):
 @router.callback_query(AddFSM.site, F.data == "asite_manual")
 async def add_site_manual(cb: CallbackQuery):
     await cb.message.edit_reply_markup(reply_markup=None)
-    await cb.message.answer("Напиши площадку вручную:"); await cb.answer()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="add_back_manf")]
+    ])
+    await cb.message.answer("Напиши площадку вручную:", reply_markup=kb); await cb.answer()
 
 @router.message(AddFSM.site, F.text, NOT_MENU)
 async def add_site(msg: Message, state: FSMContext):
@@ -870,7 +942,7 @@ async def add_note(msg: Message, state: FSMContext):
             f"Выдано: {d.get('issued_at') or '—'}\nПримечание: {d.get('note') or '—'}")
     kb = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text="✅ Сохранить", callback_data="add:save"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data="add:cancel")]])
+        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]])
     await state.set_state(AddFSM.confirm)
     await msg.answer(text, reply_markup=kb)
 
@@ -889,12 +961,6 @@ async def add_save(cb: CallbackQuery, state: FSMContext):
     db.sync()
     await state.clear()
     await cb.message.edit_text("✅ Сохранено.")
-    await cb.answer()
-
-@router.callback_query(AddFSM.confirm, F.data == "add:cancel")
-async def add_cancel(cb: CallbackQuery, state: FSMContext):
-    await state.clear()
-    await cb.message.edit_text("Отменено.")
     await cb.answer()
 
 # ---------- карточка (поиск): verify/unmark/edit/hist ----------
@@ -944,6 +1010,7 @@ async def cb_edit_menu(cb: CallbackQuery, state: FSMContext):
     await state.update_data(edit_eq_id=eq_id)
     buttons = [[InlineKeyboardButton(text=label, callback_data=f"editf:{key}")]
                for key, label in EDITABLE_FIELDS.items()]
+    buttons.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     await cb.message.answer("Какое поле?",
                             reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
     await cb.answer()
@@ -959,8 +1026,11 @@ async def cb_edit_field(cb: CallbackQuery, state: FSMContext):
     await state.update_data(edit_field=field)
     await state.set_state(EditFSM.value)
     old = eq[field]
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"edit:{eq_id}")]
+    ])
     await cb.message.answer(f"Поле: *{EDITABLE_FIELDS[field]}*\nТекущее: `{old if old else '—'}`\n\n"
-                            f"Новое значение (или `-`):", parse_mode="Markdown")
+                            f"Новое значение (или `-`):", parse_mode="Markdown", reply_markup=kb)
     await cb.answer()
 
 @router.message(EditFSM.value, F.text)
@@ -983,7 +1053,7 @@ async def btn_move(msg: Message, state: FSMContext):
         await msg.answer("⛔ Нет доступа."); return
     await state.clear()
     await state.set_state(MoveFSM.serial)
-    await msg.answer("Серийный номер:")
+    await msg.answer("Серийный номер (или /cancel):")
 
 @router.message(MoveFSM.serial, F.text, NOT_MENU)
 async def move_serial(msg: Message, state: FSMContext):
@@ -1019,7 +1089,7 @@ async def btn_status(msg: Message, state: FSMContext):
         await msg.answer("⛔ Нет доступа."); return
     await state.clear()
     await state.set_state(StatusFSM.serial)
-    await msg.answer("Серийный номер:")
+    await msg.answer("Серийный номер (или /cancel):")
 
 @router.message(StatusFSM.serial, F.text, NOT_MENU)
 async def status_serial(msg: Message, state: FSMContext):
@@ -1029,6 +1099,7 @@ async def status_serial(msg: Message, state: FSMContext):
     await state.clear()
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=s, callback_data=f"chst:{eq['id']}:{s}")] for s in STATUSES])
+    kb.inline_keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     await msg.answer(f"Текущий: {eq['status']}\nВыбери новый:", reply_markup=kb)
 
 @router.callback_query(F.data.startswith("chst:"))
@@ -1056,6 +1127,7 @@ async def btn_export(msg: Message, state: FSMContext):
         [InlineKeyboardButton(text="✅ Только проверенные", callback_data="exp:verified")],
         [InlineKeyboardButton(text="⏳ Только непроверенные", callback_data="exp:unverified")],
         [InlineKeyboardButton(text="🔎 С фильтром", callback_data="exp:filter")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
     ])
     await msg.answer(f"Проверено: *{done}* из *{total}*\nЧто выгрузить?",
                      parse_mode="Markdown", reply_markup=kb)
@@ -1110,8 +1182,23 @@ async def cb_exp_filter(cb: CallbackQuery):
          InlineKeyboardButton(text="Статус", callback_data="expf:status")],
         [InlineKeyboardButton(text="Площадка", callback_data="expf:site"),
          InlineKeyboardButton(text="Организация", callback_data="expf:organization")],
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="exp:back_menu")],
     ])
     await cb.message.edit_text("По какому полю?", reply_markup=kb)
+    await cb.answer()
+
+@router.callback_query(F.data == "exp:back_menu")
+async def cb_exp_back(cb: CallbackQuery):
+    done, total = db.count_verified()
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📋 Весь файл", callback_data="exp:all")],
+        [InlineKeyboardButton(text="✅ Только проверенные", callback_data="exp:verified")],
+        [InlineKeyboardButton(text="⏳ Только непроверенные", callback_data="exp:unverified")],
+        [InlineKeyboardButton(text="🔎 С фильтром", callback_data="exp:filter")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")],
+    ])
+    await cb.message.edit_text(f"Проверено: *{done}* из *{total}*\nЧто выгрузить?",
+                     parse_mode="Markdown", reply_markup=kb)
     await cb.answer()
 
 @router.callback_query(F.data.startswith("expf:"))
@@ -1124,7 +1211,11 @@ async def cb_expf(cb: CallbackQuery, state: FSMContext):
     prompts = {"workplace": "место установки", "employee": "ФИО",
                "type": "тип", "status": "статус", "site": "площадку",
                "organization": "организацию"}
-    await cb.message.edit_text(f"Введи {prompts.get(field, field)}:")
+    
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="exp:filter")]
+    ])
+    await cb.message.edit_text(f"Введи {prompts.get(field, field)} (или /cancel):", reply_markup=kb)
     await cb.answer()
 
 @router.message(ExportFSM.waiting_value, F.text, NOT_MENU)
@@ -1155,7 +1246,7 @@ async def cmd_import(msg: Message, state: FSMContext):
     if not has_role(msg.from_user.id, "admin"):
         await msg.answer("⛔ Нет доступа."); return
     await state.clear()
-    await msg.answer("Пришли .xlsx файл.")
+    await msg.answer("Пришли .xlsx файл (или /cancel).")
 
 @router.message(F.document)
 async def handle_doc(msg: Message):
@@ -1228,9 +1319,11 @@ async def cmd_users(msg: Message, state: FSMContext):
     lines = ["👥 Пользователи:"]
     for u in rows:
         lines.append(f"• {u['telegram_id']} — {u['full_name'] or '—'} — {u['role']}")
-    kb = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text="➕ Выдать", callback_data="usr:grant"),
-        InlineKeyboardButton(text="❌ Забрать", callback_data="usr:revoke")]])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Выдать", callback_data="usr:grant"),
+         InlineKeyboardButton(text="❌ Забрать", callback_data="usr:revoke")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ])
     await msg.answer("\n".join(lines), reply_markup=kb)
 
 @router.message(Command("grant"))
@@ -1261,7 +1354,10 @@ async def cb_usr_grant(cb: CallbackQuery, state: FSMContext):
     if not has_role(cb.from_user.id, "admin"):
         await cb.answer("Нет доступа", show_alert=True); return
     await state.set_state(UsersFSM.waiting_grant)
-    await cb.message.answer("Формат: <id> <viewer|editor|admin>")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="usr:back")]
+    ])
+    await cb.message.edit_text("Формат: <id> <viewer|editor|admin>", reply_markup=kb)
     await cb.answer()
 
 @router.callback_query(F.data == "usr:revoke")
@@ -1269,7 +1365,25 @@ async def cb_usr_revoke(cb: CallbackQuery, state: FSMContext):
     if not has_role(cb.from_user.id, "admin"):
         await cb.answer("Нет доступа", show_alert=True); return
     await state.set_state(UsersFSM.waiting_revoke)
-    await cb.message.answer("Отправь telegram_id:")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="⬅️ Назад", callback_data="usr:back")]
+    ])
+    await cb.message.edit_text("Отправь telegram_id:", reply_markup=kb)
+    await cb.answer()
+
+@router.callback_query(F.data == "usr:back")
+async def cb_usr_back(cb: CallbackQuery, state: FSMContext):
+    await state.clear()
+    rows = db.list_users()
+    lines = ["👥 Пользователи:"]
+    for u in rows:
+        lines.append(f"• {u['telegram_id']} — {u['full_name'] or '—'} — {u['role']}")
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="➕ Выдать", callback_data="usr:grant"),
+         InlineKeyboardButton(text="❌ Забрать", callback_data="usr:revoke")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
+    ])
+    await cb.message.edit_text("\n".join(lines), reply_markup=kb)
     await cb.answer()
 
 @router.message(UsersFSM.waiting_grant, F.text, NOT_MENU)
@@ -1372,6 +1486,7 @@ async def cmd_status(msg: Message, command: CommandObject):
         await msg.answer("❌ Не найдено."); return
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=s, callback_data=f"chst:{eq['id']}:{s}")] for s in STATUSES])
+    kb.inline_keyboard.append([InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")])
     await msg.answer(f"Текущий: {eq['status']}\nВыбери новый:", reply_markup=kb)
 
 @router.message(Command("export"))
