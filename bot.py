@@ -719,7 +719,6 @@ async def walk_edit_field(cb: CallbackQuery, state: FSMContext):
     eq_id = d.get("edit_eq_id")
     eq = db.get_equipment(eq_id)
     
-    # --- ИНТЕГРАЦИЯ КНОПОК В МЕНЮ РЕДАКТИРОВАНИЯ ---
     if field == "status":
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=s, callback_data=f"wc_st:{eq_id}:{s}")] for s in STATUSES
@@ -741,7 +740,6 @@ async def walk_edit_field(cb: CallbackQuery, state: FSMContext):
         await cb.answer()
         return
 
-    # Для остальных полей - ввод текстом
     await state.update_data(edit_field=field)
     await state.set_state(WalkFSM.field_edit)
     old = eq[field]
@@ -755,7 +753,6 @@ async def walk_edit_field(cb: CallbackQuery, state: FSMContext):
         f"Новое значение (или `-`):", parse_mode="Markdown", reply_markup=kb)
     await cb.answer()
 
-# --- Обработчик кнопок выбора статуса в меню редактирования ---
 @router.callback_query(F.data.startswith("wc_st:"))
 async def walk_status_select(cb: CallbackQuery, state: FSMContext):
     if not has_role(cb.from_user.id, "editor"):
