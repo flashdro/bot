@@ -87,28 +87,58 @@ def manufacturer_kb_more():
     ])
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
-def site_kb():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="СПб", callback_data="asite:СПб"),
-         InlineKeyboardButton(text="Мск Капотня", callback_data="asite:Мск Капотня")],
-        [InlineKeyboardButton(text="Мск МНПЗ", callback_data="asite:Мск МНПЗ"),
-         InlineKeyboardButton(text="Омск ОНПЗ", callback_data="asite:Омск ОНПЗ")],
-        [InlineKeyboardButton(text="Омск Кронштадт", callback_data="asite:Омск Кронштадт")],
-        [InlineKeyboardButton(text="✏️ Вручную", callback_data="asite_manual")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data="add_back_manf"),
-         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel")]
-    ])
+# Площадки из столбца «Площадка» исходного Excel. Порядок первой страницы — приоритетный.
+SITES_MAIN = [
+    "СПБ Дегтярный переулок, д.11, лит. Б, корп. 3",
+    "МСК Капотня, д. 38, стр. 1",
+    "МСК Капотня, 2 квартал, д. 1 корп. 3",
+    "ОМС Нефтезаводская улица, д. 51",
+    "ОМС проспект Губкина, д. 1",
+]
+SITES_OTHER = [
+    "МСК улица Кржижановского, д. 14, к. 3", "СПБ Киевская улица, д. 5, корп. 4",
+    "СПБ Английская набережная, д. 70", "СПБ дорога в Каменку, д. 74, лит. А",
+    "ФРЗ Озерная улица, д. 6а", "УЛН 24-ый Инженерный проезд, д. 1, лит. А",
+    "СПБ Московский проспект, д. 60", "ОМС Красноярский тракт, строение 137",
+    "МСК Капотня, 2 квартал, д. 1", "Обь Омский тракт, д. 11, аэропорт Толмачево",
+    "СПБ проспект Стачек, д. 47, корп. 2", "НБК улица Ленина, д. 59/87",
+    "СПБ Дегтярный переулок, д.1Б, строение 1, корп. 4", "СПБ Дегтярный переулок, д.1Б, строение 1, корп. 5",
+    "БРГ улица Чкалова, д. 16б", "МРВ Новое месторождение", "ВЗМ улица Юбилейная, д.14",
+    "НРС село Кирилловка", "МСК аэропорт Шереметьево-1, владение 7а", "СПБ улица Миллионная, д. 6",
+    "Ростовская обл, Сальский р-н, Рыбасово п-неизвестно", "Химки г-неизвестно", "РЗН Ряжское шоссе, д. 20з",
+    "КСК деревня Халино", "НБК Холмогорское месторождение", "МСК Капотня, 2 квартал, д. 1 корп. 14",
+    "СПБ Парадная улица, д. 1", "ННОВ Московское шоссе, д. 83, лит. А, к. 3", "Неизвестно",
+    "ВРН Краснознаменная улица, д. 226, лит В", "СПБ набережная реки Мойки, д. 74",
+    "НРС Сухумское шоссе, д. 21", "СПБ Дегтярный переулок, д.1Б, строение 1, корп. 6",
+    "СПБ Кубинская улица, д. 84, лит. В",
+]
+SITES = SITES_MAIN + SITES_OTHER
+SITE_PAGE_SIZE = 8
 
-def walk_site_kb(eq_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="СПб", callback_data="asite:СПб"),
-         InlineKeyboardButton(text="Мск Капотня", callback_data="asite:Мск Капотня")],
-        [InlineKeyboardButton(text="Мск МНПЗ", callback_data="asite:Мск МНПЗ"),
-         InlineKeyboardButton(text="Омск ОНПЗ", callback_data="asite:Омск ОНПЗ")],
-        [InlineKeyboardButton(text="Омск Кронштадт", callback_data="asite:Омск Кронштадт")],
-        [InlineKeyboardButton(text="✏️ Вручную", callback_data="asite_manual")],
-        [InlineKeyboardButton(text="⬅️ Назад", callback_data=f"wc:site_back:{eq_id}")]
-    ])
+def _site_keyboard(page=0, eq_id=None, add_mode=False):
+    sites = SITES_MAIN if page == 0 else SITES_OTHER[(page-1)*SITE_PAGE_SIZE:page*SITE_PAGE_SIZE]
+    offset = 0 if page == 0 else len(SITES_MAIN) + (page-1)*SITE_PAGE_SIZE
+    rows = []
+    for i in range(0, len(sites), 2):
+        row = []
+        for j in range(i, min(i+2, len(sites))):
+            idx = offset + j
+            row.append(InlineKeyboardButton(text=sites[j], callback_data=f"asiteidx:{idx}"))
+        rows.append(row)
+    pages = 1 + (len(SITES_OTHER) + SITE_PAGE_SIZE - 1)//SITE_PAGE_SIZE
+    nav = []
+    if page > 0: nav.append(InlineKeyboardButton(text="⬅️ Предыдущая", callback_data=f"asitepage:{page-1}"))
+    if page < pages-1: nav.append(InlineKeyboardButton(text="Следующая ➡️", callback_data=f"asitepage:{page+1}"))
+    if nav: rows.append(nav)
+    rows.append([InlineKeyboardButton(text="✏️ Вручную", callback_data="asite_manual")])
+    rows.append([InlineKeyboardButton(text="⬅️ Назад", callback_data=("add_back_manf" if add_mode else f"wc:site_back:{eq_id}"))])
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+def site_kb():
+    return _site_keyboard(0, add_mode=True)
+
+def walk_site_kb(eq_id, page=0):
+    return _site_keyboard(page, eq_id=eq_id)
 
 def org_kb(eq_id):
     b = [[InlineKeyboardButton(text=o, callback_data=f"worq:{eq_id}:{i}")]
@@ -655,7 +685,7 @@ async def walk_site(cb: CallbackQuery, state: FSMContext):
         return
     await state.update_data(walk_edit_eq=eq_id)
     await state.set_state(WalkFSM.site_input)
-    await cb.message.edit_text("🏢 Выбери площадку:", reply_markup=walk_site_kb(eq_id))
+    await cb.message.edit_text("🏢 Выбери площадку:", reply_markup=walk_site_kb(eq_id, 0))
     await cb.answer()
 
 @router.callback_query(F.data.startswith("wc:site_back:"))
@@ -663,6 +693,34 @@ async def walk_site_back(cb: CallbackQuery, state: FSMContext):
     eq_id = int(cb.data.split(":")[2])
     await kill_old(cb)
     await walk_show_card(cb, state, eq_id)
+    await cb.answer()
+
+@router.callback_query(WalkFSM.site_input, F.data.startswith("asitepage:"))
+async def walk_site_page(cb: CallbackQuery, state: FSMContext):
+    page = int(cb.data.split(":")[1])
+    eq_id = (await state.get_data()).get("walk_edit_eq")
+    await cb.message.edit_reply_markup(reply_markup=walk_site_kb(eq_id, page))
+    await cb.answer()
+
+@router.callback_query(AddFSM.site, F.data.startswith("asitepage:"))
+async def add_site_page(cb: CallbackQuery, state: FSMContext):
+    page = int(cb.data.split(":")[1])
+    await cb.message.edit_reply_markup(reply_markup=_site_keyboard(page, add_mode=True))
+    await cb.answer()
+
+@router.callback_query(F.data.startswith("asiteidx:"))
+async def site_index_select(cb: CallbackQuery, state: FSMContext):
+    idx = int(cb.data.split(":")[1])
+    if idx < 0 or idx >= len(SITES):
+        await cb.answer("Площадка не найдена", show_alert=True); return
+    val = SITES[idx]
+    if await state.get_state() == WalkFSM.site_input.state:
+        await _walk_site_save(cb, state, val)
+    elif await state.get_state() == AddFSM.site.state:
+        await state.update_data(site=val)
+        await cb.message.edit_reply_markup(reply_markup=None)
+        await cb.message.answer(f"Площадка: {val}\nДата выдачи (ГГГГ-ММ-ДД или -):")
+        await state.set_state(AddFSM.issued_at)
     await cb.answer()
 
 @router.callback_query(WalkFSM.site_input, F.data.startswith("asite:"))
@@ -688,11 +746,11 @@ async def _walk_site_save(send_to, state, val):
     d = await state.get_data()
     eq_id = d.get("walk_edit_eq")
     eq = db.get_equipment(eq_id)
-    if not eq or not eq["current_employee_id"]:
-        await send_msg(send_to, "⚠️ Нет сотрудника.")
+    if not eq:
+        await send_msg(send_to, "⚠️ Оборудование не найдено.")
         return
     new = None if val == "-" else val
-    db.edit_employee_field(eq["current_employee_id"], "site", new, send_to.from_user.id)
+    db.edit_equipment_field(eq_id, "site", new, send_to.from_user.id)
     await send_msg(send_to, f"✅ Площадка: {new or '—'}")
     await walk_show_card(send_to, state, eq_id)
 
@@ -994,7 +1052,7 @@ async def add_save(cb: CallbackQuery, state: FSMContext):
         type_=d["type_"], manufacturer=d.get("manufacturer"), model=d.get("model"),
         serial=d["serial"], inv=d.get("inventory"), organization=None, mol=None,
         location=d.get("workplace"), status=d["status"], employee_id=emp_id,
-        issued_at=d.get("issued_at"), note=d.get("note"), changed_by=cb.from_user.id)
+        issued_at=d.get("issued_at"), note=d.get("note"), changed_by=cb.from_user.id, site=d.get("site"))
     db.sync()
     await state.clear()
     await cb.message.edit_text("✅ Сохранено.")
@@ -1345,7 +1403,7 @@ async def handle_doc(msg: Message):
             employee_id=emp_id,
             issued_at=r.get("issued_at"),
             note=r.get("note"),
-            changed_by=msg.from_user.id)
+            changed_by=msg.from_user.id, site=r.get("site"))
         added += 1
         
     await msg.answer("⏳ Данные загружены в память. Отправляю в облако Turso, подожди...")
