@@ -46,7 +46,8 @@ MANUFACTURERS_MAIN = ["Lenovo", "HP", "Dell", "Samsung", "Acer", "ASUS",
 MANUFACTURERS_MORE = ["Cisco", "Kyocera", "Apple", "Huawei", "Logitech",
                       "Polycom", "Canon", "Epson", "Xerox"]
 
-MOLS_QUICK = ["Дубровский Егор Васильевич"]
+MOLS_QUICK = ["Дубровский Егор Васильевич",
+              "Янчитский Евгений Николаевич", "Малявкин Сергей Андреевич"]
 
 ORGANIZATIONS_QUICK = [
     "Газпромнефть-Энергосервис ООО",
