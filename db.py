@@ -30,6 +30,7 @@ SCHEMA_STATEMENTS = [
         organization        TEXT,
         mol                 TEXT,
         location            TEXT,
+        site                TEXT,
         status              TEXT NOT NULL DEFAULT 'В эксплуатации',
         current_employee_id INTEGER,
         issued_at           TEXT,
@@ -125,7 +126,18 @@ def init_db():
             conn.execute(stmt)
         except Exception as e:
             print(f"Ошибка схемы: {e}")
-    conn.commit()
+    # Миграция для уже существующей базы: добавляем площадку на уровне оборудования.
+    try:
+        conn.execute("ALTER TABLE equipment ADD COLUMN site TEXT")
+        conn.commit()
+    except Exception as e:
+        if "duplicate column" not in str(e).lower() and "already exists" not in str(e).lower():
+            print(f"Миграция equipment.site: {e}")
+    try:
+        conn.execute("UPDATE equipment SET site=(SELECT employees.site FROM employees WHERE employees.id=equipment.current_employee_id) WHERE site IS NULL AND current_employee_id IS NOT NULL")
+        conn.commit()
+    except Exception as e:
+        print(f"Заполнение площадок существующего оборудования: {e}")
     sync()
     print("Схема готова.")
 
@@ -221,7 +233,7 @@ def get_equipment(eq_id):
 
 def get_equipment_full(eq_id):
     return _row(_exec("""SELECT e.*, emp.full_name, emp.email, emp.department,
-                                emp.workplace, emp.site
+                                emp.workplace, emp.site AS employee_site
                          FROM equipment e
                          LEFT JOIN employees emp ON emp.id = e.current_employee_id
                          WHERE e.id=?""", [eq_id]))
@@ -243,13 +255,13 @@ def employee_equipment_stats(emp_id):
     return (row[1] or 0, row[0] or 0)
 
 def create_equipment(type_, manufacturer, model, serial, inv, organization, mol,
-                     location, status, employee_id, issued_at, note, changed_by):
+                     location, status, employee_id, issued_at, note, changed_by, site=None):
     _exec("""INSERT INTO equipment
         (type, manufacturer, model, serial, inventory_no, organization, mol,
-         location, status, current_employee_id, issued_at, note)
-        VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+         location, status, current_employee_id, issued_at, note, site)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
         [type_, manufacturer, model, serial, inv, organization, mol,
-         location, status, employee_id, issued_at, note])
+         location, status, employee_id, issued_at, note, site])
     eq_id = _scalar(_exec("SELECT last_insert_rowid()"), 0)
     _exec("""INSERT INTO history(equipment_id, action, to_employee_id, new_value, changed_by)
              VALUES(?, 'create', ?, ?, ?)""", [eq_id, employee_id, status, changed_by])
@@ -286,7 +298,7 @@ def mark_verified(eq_id, changed_by, verified=True):
 
 def edit_equipment_field(eq_id, field, new_value, changed_by):
     allowed = {"type", "manufacturer", "model", "serial", "inventory_no",
-               "organization", "mol", "location", "status", "issued_at", "note"}
+               "organization", "mol", "location", "site", "status", "issued_at", "note"}
     if field not in allowed:
         return False, "Это поле нельзя редактировать"
     eq = get_equipment(eq_id)
@@ -334,7 +346,7 @@ def get_employee_equipment(emp_id):
 def universal_search(query, limit=20):
     q = query.strip().lower()
     cur = _exec("""
-        SELECT e.*, emp.full_name, emp.department, emp.workplace, emp.site, emp.email
+        SELECT e.*, emp.full_name, emp.department, emp.workplace, emp.site AS employee_site, emp.email
         FROM equipment e
         LEFT JOIN employees emp ON emp.id = e.current_employee_id
         ORDER BY emp.full_name, e.type
@@ -344,7 +356,7 @@ def universal_search(query, limit=20):
         for field in ("type", "manufacturer", "model", "serial", "inventory_no",
                       "organization", "mol", "location", "status", "note",
                       "issued_at", "full_name", "email", "department",
-                      "workplace", "site"):
+                      "workplace", "site", "employee_site"):
             v = r.get(field)
             if v and q in str(v).lower():
                 result.append(r)
@@ -358,7 +370,7 @@ def export_query(employee_like=None, workplace=None, site=None, type_=None,
     cur = _exec("""
         SELECT e.type, e.manufacturer, e.model, e.serial, e.inventory_no,
                e.organization, e.mol, e.location, e.status,
-               emp.full_name, emp.email, emp.department, emp.workplace, emp.site,
+               emp.full_name, emp.email, emp.department, emp.workplace, e.site,
                e.issued_at, e.note, e.verified_at, e.verified_by
         FROM equipment e
         LEFT JOIN employees emp ON emp.id = e.current_employee_id
